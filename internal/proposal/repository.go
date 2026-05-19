@@ -111,7 +111,8 @@ func (r *repository) FindByID(ctx context.Context, id string) (*Proposal, error)
 	return p, nil
 }
 
-func (r *repository) ListByApplicant(ctx context.Context, applicantID string, status string, limit int, offset int) ([]Proposal, int, error) {
+func (r *repository) ListByApplicant(ctx context.Context, applicantID string, status string, limit int, page int) ([]Proposal, int, error) {
+	offset := (page - 1) * limit
 	countQuery := `SELECT COUNT(*) FROM proposals WHERE applicant_id = $1`
 	args := []interface{}{applicantID}
 	argIdx := 2
@@ -144,7 +145,8 @@ func (r *repository) ListByApplicant(ctx context.Context, applicantID string, st
 	return r.scanProposals(ctx, query, queryArgs, total)
 }
 
-func (r *repository) ListAll(ctx context.Context, status string, limit int, offset int) ([]Proposal, int, error) {
+func (r *repository) ListAll(ctx context.Context, status string, limit int, page int) ([]Proposal, int, error) {
+	offset := (page - 1) * limit
 	args := []interface{}{}
 	countQuery := `SELECT COUNT(*) FROM proposals`
 	query := `

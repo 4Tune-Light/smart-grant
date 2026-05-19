@@ -90,15 +90,14 @@ func (h *Handler) GetByID(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 	status := r.URL.Query().Get("status")
 	limit := parseIntParam(r.URL.Query().Get("limit"), 10)
-	offset := parseIntParam(r.URL.Query().Get("offset"), 0)
+	page := parseIntParam(r.URL.Query().Get("page"), 1)
 
-	resp, total, err := h.svc.List(r.Context(), status, limit, offset)
+	resp, total, err := h.svc.List(r.Context(), status, limit, page)
 	if err != nil {
 		handleError(w, err)
 		return
 	}
 
-	page := offset/limit + 1
 	response.Paginated(w, resp, page, limit, int64(total))
 }
 

@@ -13,7 +13,7 @@ type Service interface {
 	Update(ctx context.Context, proposalID string, req UpdateProposalRequest) (*ProposalResponse, error)
 	Submit(ctx context.Context, proposalID string) (*ProposalResponse, error)
 	GetByID(ctx context.Context, proposalID string) (*ProposalResponse, error)
-	List(ctx context.Context, status string, limit int, offset int) ([]ProposalResponse, int, error)
+	List(ctx context.Context, status string, limit int, page int) ([]ProposalResponse, int, error)
 	UploadDocument(ctx context.Context, proposalID string, req DocumentUploadRequest) (*DocumentResponse, error)
 	GetDocuments(ctx context.Context, proposalID string) ([]DocumentResponse, error)
 }
@@ -136,7 +136,7 @@ func (s *service) GetByID(ctx context.Context, proposalID string) (*ProposalResp
 	return toProposalResponse(proposal), nil
 }
 
-func (s *service) List(ctx context.Context, status string, limit int, offset int) ([]ProposalResponse, int, error) {
+func (s *service) List(ctx context.Context, status string, limit int, page int) ([]ProposalResponse, int, error) {
 	userID, _ := ctx.Value(middleware.AuthUserIDKey).(string)
 	role, _ := ctx.Value(middleware.AuthRoleKey).(string)
 
@@ -145,9 +145,9 @@ func (s *service) List(ctx context.Context, status string, limit int, offset int
 	var err error
 
 	if role == "applicant" {
-		proposals, total, err = s.repo.ListByApplicant(ctx, userID, status, limit, offset)
+		proposals, total, err = s.repo.ListByApplicant(ctx, userID, status, limit, page)
 	} else {
-		proposals, total, err = s.repo.ListAll(ctx, status, limit, offset)
+		proposals, total, err = s.repo.ListAll(ctx, status, limit, page)
 	}
 	if err != nil {
 		return nil, 0, err

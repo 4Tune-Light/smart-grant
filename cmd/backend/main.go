@@ -18,6 +18,7 @@ import (
 	"github.com/rizky/smart-grant/internal/middleware"
 	"github.com/rizky/smart-grant/internal/proposal"
 	"github.com/rizky/smart-grant/internal/review"
+	"github.com/rizky/smart-grant/internal/risk"
 	"github.com/rizky/smart-grant/internal/server"
 	"github.com/rizky/smart-grant/internal/telemetry"
 	"github.com/rizky/smart-grant/pkg/database"
@@ -191,6 +192,17 @@ func registerRoutes(r chi.Router, cfg *config.Config, pool *pgxpool.Pool) {
 			r.Post("/{id}/approve", reviewHandler.Approve)
 			r.Post("/{id}/reject", reviewHandler.Reject)
 		})
+	})
+
+	riskRepo := risk.NewRepository(pool)
+	riskSvc := risk.NewService(riskRepo, proposalRepo)
+	riskHandler := risk.NewHandler(riskSvc)
+
+	r.Route("/api/v1/risk", func(r chi.Router) {
+		r.Use(middleware.Authenticate(cfg.JWT.Secret))
+		r.Use(middleware.RequireRole("admin", "reviewer"))
+		r.Post("/{id}", riskHandler.Score)
+		r.Get("/{id}", riskHandler.GetScore)
 	})
 }
 
