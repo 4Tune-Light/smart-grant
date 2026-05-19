@@ -37,14 +37,19 @@ dev-logs:
 
 # Run tests
 test:
-	@echo "Running tests..."
-	go test ./... -v -race -count=1
+	@echo "Running all tests (short mode — skips integration)..."
+	go test -short -v -race -count=1 ./...
 
-test-short:
-	@echo "Running short tests..."
-	go test ./... -short -race -count=1
+test-integration:
+	@echo "Running integration tests (requires Docker)..."
+	go test -run Integration -v -race -count=1 ./...
 
-# Lint
+test-coverage:
+	@echo "Running tests with coverage..."
+	go test -short -v -race -coverprofile=coverage.out ./...
+	go tool cover -html=coverage.out -o coverage.html
+	@echo "Coverage report: coverage.html"
+
 lint:
 	@echo "Running linter..."
 	golangci-lint run ./...
