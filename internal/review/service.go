@@ -6,6 +6,7 @@ import (
 
 	"github.com/rizky/smart-grant/internal/audit"
 	"github.com/rizky/smart-grant/internal/middleware"
+	"github.com/rizky/smart-grant/internal/notification"
 	"github.com/rizky/smart-grant/internal/proposal"
 )
 
@@ -20,10 +21,11 @@ type service struct {
 	repo         Repository
 	proposalRepo proposal.Repository
 	audit        audit.Service
+	notif        notification.Service
 }
 
-func NewService(repo Repository, proposalRepo proposal.Repository, a audit.Service) Service {
-	return &service{repo: repo, proposalRepo: proposalRepo, audit: a}
+func NewService(repo Repository, proposalRepo proposal.Repository, a audit.Service, n notification.Service) Service {
+	return &service{repo: repo, proposalRepo: proposalRepo, audit: a, notif: n}
 }
 
 func (s *service) Create(ctx context.Context, proposalID string, req CreateReviewRequest) (*ReviewResponse, error) {
@@ -75,6 +77,11 @@ func (s *service) Create(ctx context.Context, proposalID string, req CreateRevie
 		ActorID:    userID,
 		NewValues:  fmt.Sprintf(`{"proposal_id":"%s","score":%d,"status":"pending"}`, proposalID, req.Score),
 	})
+
+	s.notif.Send(ctx, proposal.ApplicantID, "review_received",
+		"Proposal Reviewed",
+		fmt.Sprintf("Your proposal '%s' has been reviewed (score: %d/100)", proposal.Title, req.Score),
+	)
 
 	return toResponse(rev), nil
 }
@@ -132,6 +139,11 @@ func (s *service) Approve(ctx context.Context, proposalID string) (*ReviewRespon
 		NewValues:  fmt.Sprintf(`{"proposal_id":"%s","status":"approved"}`, proposalID),
 	})
 
+	s.notif.Send(ctx, proposal.ApplicantID, "proposal_approved",
+		"Proposal Approved",
+		fmt.Sprintf("Your proposal '%s' has been approved.", proposal.Title),
+	)
+
 	return &ReviewResponse{
 		ProposalID: proposalID,
 		Status:     "approved",
@@ -165,6 +177,11 @@ func (s *service) Reject(ctx context.Context, proposalID string) (*ReviewRespons
 		ActorID:    userID,
 		NewValues:  fmt.Sprintf(`{"proposal_id":"%s","status":"rejected"}`, proposalID),
 	})
+
+	s.notif.Send(ctx, proposal.ApplicantID, "proposal_rejected",
+		"Proposal Rejected",
+		fmt.Sprintf("Your proposal '%s' has been rejected.", proposal.Title),
+	)
 
 	return &ReviewResponse{
 		ProposalID: proposalID,

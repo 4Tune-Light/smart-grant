@@ -9,6 +9,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	chimiddleware "github.com/go-chi/chi/v5/middleware"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/redis/go-redis/v9"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	"google.golang.org/grpc"
@@ -17,6 +18,7 @@ import (
 	"github.com/rizky/smart-grant/internal/auth"
 	"github.com/rizky/smart-grant/internal/config"
 	"github.com/rizky/smart-grant/internal/middleware"
+	"github.com/rizky/smart-grant/internal/notification"
 	"github.com/rizky/smart-grant/internal/proposal"
 	"github.com/rizky/smart-grant/internal/review"
 	"github.com/rizky/smart-grant/internal/risk"
@@ -62,8 +64,10 @@ func main() {
 		PoolSize:     cfg.Redis.PoolSize,
 		MinIdleConns: cfg.Redis.MinIdleConns,
 	}
-	if _, err := database.NewRedisClient(ctx, redisCfg); err != nil {
+	redisClient, err := database.NewRedisClient(ctx, redisCfg)
+	if err != nil {
 		log.Warn().Err(err).Msg("Redis not available, continuing without it")
+		redisClient = nil
 	}
 
 	httpSrv := server.NewHTTPServer(
@@ -73,7 +77,7 @@ func main() {
 		cfg.Server.HTTP.ReadTimeout,
 	)
 
-	registerRoutes(httpSrv.Router(), cfg, pgPool)
+	registerRoutes(httpSrv.Router(), cfg, pgPool, redisClient)
 
 	grpcSrv, err := server.NewGRPCServer(
 		"backend-grpc",
@@ -123,7 +127,7 @@ func buildPostgresDSN(cfg *config.Config) database.PostgresConfig {
 	}
 }
 
-func registerRoutes(r chi.Router, cfg *config.Config, pool *pgxpool.Pool) {
+func registerRoutes(r chi.Router, cfg *config.Config, pool *pgxpool.Pool, redisClient *redis.Client) {
 	r.Use(chimiddleware.RequestID)
 	r.Use(middleware.RequestID)
 	r.Use(middleware.Logger)
@@ -153,6 +157,9 @@ func registerRoutes(r chi.Router, cfg *config.Config, pool *pgxpool.Pool) {
 	auditRepo := audit.NewRepository(pool)
 	auditSvc := audit.NewService(auditRepo)
 
+	notifRepo := notification.NewRepository(pool)
+	notifSvc := notification.NewService(notifRepo, redisClient)
+
 	proposalRepo := proposal.NewRepository(pool)
 
 	minioStore, err := storage.NewMinio(storage.Config{
@@ -168,7 +175,7 @@ func registerRoutes(r chi.Router, cfg *config.Config, pool *pgxpool.Pool) {
 		minioStore = nil
 	}
 
-	proposalSvc := proposal.NewService(proposalRepo, minioStore, auditSvc)
+	proposalSvc := proposal.NewService(proposalRepo, minioStore, auditSvc, notifSvc)
 	proposalHandler := proposal.NewHandler(proposalSvc)
 
 	r.Route("/api/v1/proposals", func(r chi.Router) {
@@ -190,7 +197,7 @@ func registerRoutes(r chi.Router, cfg *config.Config, pool *pgxpool.Pool) {
 	})
 
 	reviewRepo := review.NewRepository(pool)
-	reviewSvc := review.NewService(reviewRepo, proposalRepo, auditSvc)
+	reviewSvc := review.NewService(reviewRepo, proposalRepo, auditSvc, notifSvc)
 	reviewHandler := review.NewHandler(reviewSvc)
 
 	r.Route("/api/v1/reviews", func(r chi.Router) {
@@ -230,6 +237,14 @@ func registerRoutes(r chi.Router, cfg *config.Config, pool *pgxpool.Pool) {
 		r.Use(middleware.RequireRole("admin"))
 		r.Get("/", auditHandler.List)
 		r.Get("/{entity_id}", auditHandler.List)
+	})
+
+	notifHandler := notification.NewHandler(notifSvc)
+	r.Route("/api/v1/notifications", func(r chi.Router) {
+		r.Use(middleware.Authenticate(cfg.JWT.Secret))
+		r.Get("/", notifHandler.List)
+		r.Get("/stream", notifHandler.Stream)
+		r.Patch("/read", notifHandler.MarkRead)
 	})
 }
 

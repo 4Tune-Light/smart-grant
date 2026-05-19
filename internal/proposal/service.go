@@ -11,6 +11,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/rizky/smart-grant/internal/audit"
 	"github.com/rizky/smart-grant/internal/middleware"
+	"github.com/rizky/smart-grant/internal/notification"
 	"github.com/rizky/smart-grant/pkg/storage"
 )
 
@@ -28,10 +29,11 @@ type service struct {
 	repo    Repository
 	storage storage.FileStorage
 	audit   audit.Service
+	notif   notification.Service
 }
 
-func NewService(repo Repository, st storage.FileStorage, a audit.Service) Service {
-	return &service{repo: repo, storage: st, audit: a}
+func NewService(repo Repository, st storage.FileStorage, a audit.Service, n notification.Service) Service {
+	return &service{repo: repo, storage: st, audit: a, notif: n}
 }
 
 func (s *service) Create(ctx context.Context, req CreateProposalRequest) (*ProposalResponse, error) {
@@ -148,6 +150,11 @@ func (s *service) Submit(ctx context.Context, proposalID string) (*ProposalRespo
 		ActorID:    userID,
 		NewValues:  `{"status":"submitted"}`,
 	})
+
+	s.notif.Send(ctx, userID, "proposal_submitted",
+		"Proposal Submitted",
+		fmt.Sprintf("Your proposal '%s' has been submitted for review.", proposal.Title),
+	)
 
 	return toProposalResponse(proposal), nil
 }
