@@ -17,6 +17,7 @@ import (
 	"github.com/rizky/smart-grant/internal/config"
 	"github.com/rizky/smart-grant/internal/middleware"
 	"github.com/rizky/smart-grant/internal/proposal"
+	"github.com/rizky/smart-grant/internal/review"
 	"github.com/rizky/smart-grant/internal/server"
 	"github.com/rizky/smart-grant/internal/telemetry"
 	"github.com/rizky/smart-grant/pkg/database"
@@ -165,6 +166,30 @@ func registerRoutes(r chi.Router, cfg *config.Config, pool *pgxpool.Pool) {
 			r.Post("/{id}/submit", proposalHandler.Submit)
 			r.Post("/{id}/documents", proposalHandler.UploadDocument)
 			r.Get("/{id}/documents", proposalHandler.GetDocuments)
+		})
+	})
+
+	reviewRepo := review.NewRepository(pool)
+	reviewSvc := review.NewService(reviewRepo, proposalRepo)
+	reviewHandler := review.NewHandler(reviewSvc)
+
+	r.Route("/api/v1/reviews", func(r chi.Router) {
+		r.Group(func(r chi.Router) {
+			r.Use(middleware.Authenticate(cfg.JWT.Secret))
+			r.Get("/{id}", reviewHandler.GetByProposal)
+		})
+
+		r.Group(func(r chi.Router) {
+			r.Use(middleware.Authenticate(cfg.JWT.Secret))
+			r.Use(middleware.RequireRole("reviewer"))
+			r.Post("/{id}", reviewHandler.Create)
+		})
+
+		r.Group(func(r chi.Router) {
+			r.Use(middleware.Authenticate(cfg.JWT.Secret))
+			r.Use(middleware.RequireRole("admin"))
+			r.Post("/{id}/approve", reviewHandler.Approve)
+			r.Post("/{id}/reject", reviewHandler.Reject)
 		})
 	})
 }
