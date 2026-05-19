@@ -16,6 +16,7 @@ import (
 	"github.com/rizky/smart-grant/internal/auth"
 	"github.com/rizky/smart-grant/internal/config"
 	"github.com/rizky/smart-grant/internal/middleware"
+	"github.com/rizky/smart-grant/internal/proposal"
 	"github.com/rizky/smart-grant/internal/server"
 	"github.com/rizky/smart-grant/internal/telemetry"
 	"github.com/rizky/smart-grant/pkg/database"
@@ -143,6 +144,28 @@ func registerRoutes(r chi.Router, cfg *config.Config, pool *pgxpool.Pool) {
 		r.Post("/register", authHandler.Register)
 		r.Post("/login", authHandler.Login)
 		r.Post("/refresh", authHandler.RefreshToken)
+	})
+
+	proposalRepo := proposal.NewRepository(pool)
+	proposalSvc := proposal.NewService(proposalRepo)
+	proposalHandler := proposal.NewHandler(proposalSvc)
+
+	r.Route("/api/v1/proposals", func(r chi.Router) {
+		r.Group(func(r chi.Router) {
+			r.Use(middleware.Authenticate(cfg.JWT.Secret))
+			r.Post("/", proposalHandler.Create)
+			r.Get("/", proposalHandler.List)
+			r.Get("/{id}", proposalHandler.GetByID)
+		})
+
+		r.Group(func(r chi.Router) {
+			r.Use(middleware.Authenticate(cfg.JWT.Secret))
+			r.Use(middleware.RequireRole("applicant"))
+			r.Put("/{id}", proposalHandler.Update)
+			r.Post("/{id}/submit", proposalHandler.Submit)
+			r.Post("/{id}/documents", proposalHandler.UploadDocument)
+			r.Get("/{id}/documents", proposalHandler.GetDocuments)
+		})
 	})
 }
 

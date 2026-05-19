@@ -6,6 +6,7 @@ import (
 	"net/http"
 
 	"github.com/rizky/smart-grant/pkg/response"
+	"github.com/rizky/smart-grant/pkg/validator"
 )
 
 type Handler struct {
@@ -20,6 +21,11 @@ func (h *Handler) Register(w http.ResponseWriter, r *http.Request) {
 	var req RegisterRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		response.Error(w, http.StatusBadRequest, "invalid_request", "invalid request body")
+		return
+	}
+
+	if errs := validator.Struct(req); errs != nil {
+		response.Error(w, http.StatusBadRequest, "validation_error", errs[0].Message)
 		return
 	}
 
@@ -39,6 +45,11 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if errs := validator.Struct(req); errs != nil {
+		response.Error(w, http.StatusBadRequest, "validation_error", errs[0].Message)
+		return
+	}
+
 	resp, err := h.svc.Login(r.Context(), req)
 	if err != nil {
 		handleError(w, err)
@@ -52,6 +63,11 @@ func (h *Handler) RefreshToken(w http.ResponseWriter, r *http.Request) {
 	var req RefreshRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		response.Error(w, http.StatusBadRequest, "invalid_request", "invalid request body")
+		return
+	}
+
+	if errs := validator.Struct(req); errs != nil {
+		response.Error(w, http.StatusBadRequest, "validation_error", errs[0].Message)
 		return
 	}
 
