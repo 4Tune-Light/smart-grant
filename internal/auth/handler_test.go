@@ -21,6 +21,8 @@ type mockService struct {
 func (m *mockService) Register(ctx context.Context, req RegisterRequest) (*AuthResponse, error) { return m.registerFn(ctx, req) }
 func (m *mockService) Login(ctx context.Context, req LoginRequest) (*AuthResponse, error) { return m.loginFn(ctx, req) }
 func (m *mockService) RefreshToken(ctx context.Context, req RefreshRequest) (*AuthResponse, error) { return m.refreshFn(ctx, req) }
+func (m *mockService) ListUsers(ctx context.Context, role string, limit int, page int) ([]UserInfo, int, error) { return nil, 0, nil }
+func (m *mockService) UpdateRole(ctx context.Context, targetID, newRole string) error { return nil }
 
 func TestRegisterHandler_Success(t *testing.T) {
 	svc := &mockService{

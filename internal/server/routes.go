@@ -134,6 +134,13 @@ func registerAuthRoutes(r chi.Router, cfg *config.Config, h *auth.Handler) {
 		r.Post("/login", h.Login)
 		r.Post("/refresh", h.RefreshToken)
 	})
+
+	r.Route("/api/v1/users", func(r chi.Router) {
+		r.Use(middleware.Authenticate(cfg.JWT.Secret))
+		r.Use(middleware.RequireRole("admin"))
+		r.Get("/", h.ListUsers)
+		r.Patch("/{id}/role", h.UpdateRole)
+	})
 }
 
 func registerProposalRoutes(r chi.Router, cfg *config.Config, h *proposal.Handler) {

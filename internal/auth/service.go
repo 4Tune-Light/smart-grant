@@ -31,6 +31,8 @@ type Service interface {
 	Register(ctx context.Context, req RegisterRequest) (*AuthResponse, error)
 	Login(ctx context.Context, req LoginRequest) (*AuthResponse, error)
 	RefreshToken(ctx context.Context, req RefreshRequest) (*AuthResponse, error)
+	ListUsers(ctx context.Context, role string, limit int, page int) ([]UserInfo, int, error)
+	UpdateRole(ctx context.Context, targetID string, newRole string) error
 }
 
 type service struct {
@@ -158,6 +160,28 @@ func (s *service) generateTokenResponse(user *User) (*AuthResponse, error) {
 			Role:  user.Role,
 		},
 	}, nil
+}
+
+func (s *service) ListUsers(ctx context.Context, role string, limit int, page int) ([]UserInfo, int, error) {
+	offset := (page - 1) * limit
+	users, total, err := s.repo.ListAll(ctx, role, limit, offset)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	info := make([]UserInfo, len(users))
+	for i, u := range users {
+		info[i] = UserInfo{ID: u.ID, Email: u.Email, Name: u.Name, Role: u.Role}
+	}
+	return info, total, nil
+}
+
+func (s *service) UpdateRole(ctx context.Context, targetID string, newRole string) error {
+	actorID, _ := ctx.Value("auth_user_id").(string)
+	if actorID == targetID {
+		return fmt.Errorf("cannot change your own role")
+	}
+	return s.repo.UpdateRole(ctx, targetID, newRole)
 }
 
 func hashPassword(password string) (string, error) {

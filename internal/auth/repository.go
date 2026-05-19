@@ -24,6 +24,8 @@ type Repository interface {
 	Create(ctx context.Context, user *User) error
 	FindByEmail(ctx context.Context, email string) (*User, error)
 	FindByID(ctx context.Context, id string) (*User, error)
+	ListAll(ctx context.Context, role string, limit int, offset int) ([]User, int, error)
+	UpdateRole(ctx context.Context, id string, role string) error
 }
 
 type repository struct {
@@ -94,6 +96,66 @@ func (r *repository) FindByID(ctx context.Context, id string) (*User, error) {
 	}
 
 	return user, nil
+}
+
+func (r *repository) ListAll(ctx context.Context, role string, limit int, offset int) ([]User, int, error) {
+	countQuery := "SELECT COUNT(*) FROM users"
+	query := "SELECT id, email, name, role, is_active, created_at, updated_at FROM users"
+	args := []interface{}{}
+
+	if role != "" {
+		countQuery += " WHERE role = $1"
+		query += " WHERE role = $1"
+		args = append(args, role)
+	}
+
+	var total int
+	if len(args) > 0 {
+		if err := r.pool.QueryRow(ctx, countQuery, args...).Scan(&total); err != nil {
+			return nil, 0, err
+		}
+	} else {
+		if err := r.pool.QueryRow(ctx, countQuery).Scan(&total); err != nil {
+			return nil, 0, err
+		}
+	}
+
+	query += " ORDER BY created_at DESC LIMIT $2 OFFSET $3"
+	if role == "" {
+		query = "SELECT id, email, name, role, is_active, created_at, updated_at FROM users ORDER BY created_at DESC LIMIT $1 OFFSET $2"
+		args = append(args, limit, offset)
+	} else {
+		args = append(args, limit, offset)
+	}
+
+	rows, err := r.pool.Query(ctx, query, args...)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer rows.Close()
+
+	var users []User
+	for rows.Next() {
+		var u User
+		if err := rows.Scan(&u.ID, &u.Email, &u.Name, &u.Role, &u.IsActive, &u.CreatedAt, &u.UpdatedAt); err != nil {
+			return nil, 0, err
+		}
+		users = append(users, u)
+	}
+
+	return users, total, nil
+}
+
+func (r *repository) UpdateRole(ctx context.Context, id string, role string) error {
+	query := `UPDATE users SET role = $1, updated_at = now() WHERE id = $2`
+	result, err := r.pool.Exec(ctx, query, role, id)
+	if err != nil {
+		return err
+	}
+	if result.RowsAffected() == 0 {
+		return ErrUserNotFound
+	}
+	return nil
 }
 
 func pgErrCode(err error) string {
