@@ -7,6 +7,9 @@ import (
 	"sync"
 	"time"
 
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+
 	"github.com/rizky/smart-grant/internal/middleware"
 	"github.com/rizky/smart-grant/internal/proposal"
 	"github.com/rizky/smart-grant/internal/risk/engine"
@@ -39,6 +42,9 @@ func (s *service) ensureTree() {
 }
 
 func (s *service) Score(ctx context.Context, proposalID string) (*RiskResponse, error) {
+	ctx, span := otel.Tracer("smart-grant").Start(ctx, "risk.Score")
+	defer span.End()
+
 	role, _ := ctx.Value(middleware.AuthRoleKey).(string)
 	if role != "admin" && role != "reviewer" {
 		return nil, fmt.Errorf("insufficient permissions")
@@ -49,10 +55,21 @@ func (s *service) Score(ctx context.Context, proposalID string) (*RiskResponse, 
 		return nil, ErrProposalNotFound
 	}
 
+	span.SetAttributes(
+		attribute.String("proposal.id", proposalID),
+		attribute.Float64("proposal.nominal_amount", prop.NominalAmount),
+		attribute.String("proposal.organization", prop.Organization),
+	)
+
 	s.ensureTree()
 
 	features := extractFeatures(prop)
 	label, confidence := s.tree.Classify(features)
+
+	span.SetAttributes(
+		attribute.String("risk.level", string(label)),
+		attribute.Float64("risk.confidence", float64(confidence)),
+	)
 
 	featuresJSON, _ := json.Marshal(features)
 	details := fmt.Sprintf(`{"tree_depth": %d}`, treeDepth(s.tree.Root))

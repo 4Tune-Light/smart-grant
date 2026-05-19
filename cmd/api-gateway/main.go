@@ -39,7 +39,7 @@ func main() {
 	httpSrv := server.NewHTTPServer("gateway-http",
 		cfg.Gateway.HTTP.Host, cfg.Gateway.HTTP.Port, cfg.Gateway.HTTP.ReadTimeout)
 
-	registerRoutes(httpSrv.Router())
+	registerRoutes(httpSrv.Router(), cfg.OTel.ServiceName+"-gateway")
 
 	mgr := server.NewManager(httpSrv)
 
@@ -49,12 +49,13 @@ func main() {
 	}
 }
 
-func registerRoutes(r chi.Router) {
+func registerRoutes(r chi.Router, svcName string) {
 	r.Use(chimiddleware.RequestID)
 	r.Use(middleware.RequestID)
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recovery)
 	r.Use(middleware.CORS([]string{"*"}))
+	r.Use(middleware.OTelHTTP(svcName))
 
 	r.Get("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")

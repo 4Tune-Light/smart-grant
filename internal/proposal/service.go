@@ -9,6 +9,9 @@ import (
 	"path/filepath"
 
 	"github.com/google/uuid"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+
 	"github.com/rizky/smart-grant/internal/audit"
 	"github.com/rizky/smart-grant/internal/middleware"
 	"github.com/rizky/smart-grant/internal/notification"
@@ -124,7 +127,14 @@ func (s *service) Update(ctx context.Context, proposalID string, req UpdatePropo
 }
 
 func (s *service) Submit(ctx context.Context, proposalID string) (*ProposalResponse, error) {
+	ctx, span := otel.Tracer("smart-grant").Start(ctx, "proposal.Submit")
+	defer span.End()
+
 	userID, _ := ctx.Value(middleware.AuthUserIDKey).(string)
+	span.SetAttributes(
+		attribute.String("proposal.id", proposalID),
+		attribute.String("actor.id", userID),
+	)
 
 	proposal, err := s.repo.FindByID(ctx, proposalID)
 	if err != nil {

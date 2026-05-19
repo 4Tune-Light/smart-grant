@@ -45,6 +45,7 @@ func RegisterRoutes(r chi.Router, cfg *config.Config, pool *pgxpool.Pool, rdb *r
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recovery)
 	r.Use(middleware.CORS([]string{"*"}))
+	r.Use(middleware.OTelHTTP(cfg.OTel.ServiceName + "-backend"))
 
 	r.Get("/health", healthHandler)
 

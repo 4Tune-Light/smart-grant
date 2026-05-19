@@ -4,6 +4,9 @@ import (
 	"context"
 	"fmt"
 
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+
 	"github.com/rizky/smart-grant/internal/audit"
 	"github.com/rizky/smart-grant/internal/middleware"
 	"github.com/rizky/smart-grant/internal/notification"
@@ -29,8 +32,16 @@ func NewService(repo Repository, proposalRepo proposal.Repository, a audit.Servi
 }
 
 func (s *service) Create(ctx context.Context, proposalID string, req CreateReviewRequest) (*ReviewResponse, error) {
+	ctx, span := otel.Tracer("smart-grant").Start(ctx, "review.Create")
+	defer span.End()
+
 	userID, _ := ctx.Value(middleware.AuthUserIDKey).(string)
 	role, _ := ctx.Value(middleware.AuthRoleKey).(string)
+
+	span.SetAttributes(
+		attribute.String("proposal.id", proposalID),
+		attribute.String("actor.id", userID),
+	)
 
 	if role != "reviewer" {
 		return nil, ErrNotReviewer
