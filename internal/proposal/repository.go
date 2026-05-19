@@ -3,6 +3,7 @@ package proposal
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -47,6 +48,8 @@ type Repository interface {
 	FindByID(ctx context.Context, id string) (*Proposal, error)
 	ListByApplicant(ctx context.Context, applicantID string, status string, limit int, c *cursor.Cursor) ([]Proposal, *cursor.Cursor, error)
 	ListAll(ctx context.Context, status string, limit int, c *cursor.Cursor) ([]Proposal, *cursor.Cursor, error)
+	ListByApplicantPage(ctx context.Context, applicantID string, status string, limit int, page int) ([]Proposal, int, error)
+	ListAllPage(ctx context.Context, status string, limit int, page int) ([]Proposal, int, error)
 	CreateVersion(ctx context.Context, proposalID string, versionNumber int, snapshot string) error
 	CreateDocument(ctx context.Context, d *Document) error
 	FindDocuments(ctx context.Context, proposalID string) ([]Document, error)
@@ -221,6 +224,108 @@ func (r *repository) ListAll(ctx context.Context, status string, limit int, c *c
 	}
 
 	return proposals, nextCursor, nil
+}
+
+func (r *repository) ListByApplicantPage(ctx context.Context, applicantID string, status string, limit int, page int) ([]Proposal, int, error) {
+	offset := (page - 1) * limit
+
+	countArgs := []interface{}{applicantID}
+	countQuery := `SELECT COUNT(*) FROM proposals WHERE applicant_id = $1`
+	if status != "" {
+		countQuery += ` AND status = $2`
+		countArgs = append(countArgs, status)
+	}
+
+	var total int
+	if err := r.pool.QueryRow(ctx, countQuery, countArgs...).Scan(&total); err != nil {
+		return nil, 0, err
+	}
+
+	query := `
+		SELECT id, applicant_id, title, description, nominal_amount,
+		       organization, status, version, created_at, updated_at
+		FROM proposals WHERE applicant_id = $1`
+	args := []interface{}{applicantID}
+
+	if status != "" {
+		query += ` AND status = $2`
+		args = append(args, status)
+	}
+
+	query += ` ORDER BY created_at DESC LIMIT ` + strconv.Itoa(limit) + ` OFFSET ` + strconv.Itoa(offset)
+
+	rows, err := r.pool.Query(ctx, query, args...)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer rows.Close()
+
+	var proposals []Proposal
+	for rows.Next() {
+		var p Proposal
+		if err := rows.Scan(
+			&p.ID, &p.ApplicantID, &p.Title, &p.Description, &p.NominalAmount,
+			&p.Organization, &p.Status, &p.Version, &p.CreatedAt, &p.UpdatedAt,
+		); err != nil {
+			return nil, 0, err
+		}
+		proposals = append(proposals, p)
+	}
+
+	return proposals, total, nil
+}
+
+func (r *repository) ListAllPage(ctx context.Context, status string, limit int, page int) ([]Proposal, int, error) {
+	offset := (page - 1) * limit
+
+	countQuery := `SELECT COUNT(*) FROM proposals`
+	if status != "" {
+		countQuery += ` WHERE status = $1`
+	}
+
+	var total int
+	if status != "" {
+		if err := r.pool.QueryRow(ctx, countQuery, status).Scan(&total); err != nil {
+			return nil, 0, err
+		}
+	} else {
+		if err := r.pool.QueryRow(ctx, countQuery).Scan(&total); err != nil {
+			return nil, 0, err
+		}
+	}
+
+	query := `
+		SELECT id, applicant_id, title, description, nominal_amount,
+		       organization, status, version, created_at, updated_at
+		FROM proposals`
+	args := []interface{}{}
+
+	if status != "" {
+		query += ` WHERE status = $1`
+		args = append(args, status)
+	}
+
+	query += ` ORDER BY created_at DESC LIMIT ` + strconv.Itoa(limit) + ` OFFSET ` + strconv.Itoa(offset)
+
+	rows, err := r.pool.Query(ctx, query, args...)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer rows.Close()
+
+	var proposals []Proposal
+	for rows.Next() {
+		var p Proposal
+		if err := rows.Scan(
+			&p.ID, &p.ApplicantID, &p.Title, &p.Description, &p.NominalAmount,
+			&p.Organization, &p.Status, &p.Version, &p.CreatedAt, &p.UpdatedAt,
+		); err != nil {
+			return nil, 0, err
+		}
+		proposals = append(proposals, p)
+	}
+
+	return proposals, total, nil
 }
 
 func (r *repository) CreateVersion(ctx context.Context, proposalID string, versionNumber int, snapshot string) error {

@@ -22,6 +22,7 @@ type Service interface {
 	Submit(ctx context.Context, proposalID string) (*ProposalResponse, error)
 	GetByID(ctx context.Context, proposalID string) (*ProposalResponse, error)
 	List(ctx context.Context, status string, limit int, cursor *cursor.Cursor) ([]ProposalResponse, *cursor.Cursor, error)
+	ListPage(ctx context.Context, status string, limit int, page int) ([]ProposalResponse, int, error)
 	UploadDocument(ctx context.Context, proposalID string, file io.Reader, header *multipart.FileHeader) (*DocumentResponse, error)
 	GetDocuments(ctx context.Context, proposalID string) ([]DocumentResponse, error)
 }
@@ -199,6 +200,31 @@ func (s *service) List(ctx context.Context, status string, limit int, c *cursor.
 	}
 
 	return responses, nextCursor, nil
+}
+
+func (s *service) ListPage(ctx context.Context, status string, limit int, page int) ([]ProposalResponse, int, error) {
+	userID, _ := ctx.Value(middleware.AuthUserIDKey).(string)
+	role, _ := ctx.Value(middleware.AuthRoleKey).(string)
+
+	var proposals []Proposal
+	var total int
+	var err error
+
+	if role == "applicant" {
+		proposals, total, err = s.repo.ListByApplicantPage(ctx, userID, status, limit, page)
+	} else {
+		proposals, total, err = s.repo.ListAllPage(ctx, status, limit, page)
+	}
+	if err != nil {
+		return nil, 0, err
+	}
+
+	responses := make([]ProposalResponse, len(proposals))
+	for i, p := range proposals {
+		responses[i] = *toProposalResponse(&p)
+	}
+
+	return responses, total, nil
 }
 
 func (s *service) UploadDocument(ctx context.Context, proposalID string, file io.Reader, header *multipart.FileHeader) (*DocumentResponse, error) {

@@ -183,6 +183,7 @@ func registerRoutes(r chi.Router, cfg *config.Config, pool *pgxpool.Pool, redisC
 			r.Use(middleware.Authenticate(cfg.JWT.Secret))
 			r.Post("/", proposalHandler.Create)
 			r.Get("/", proposalHandler.List)
+			r.Get("/page", proposalHandler.ListPage)
 			r.Get("/{id}", proposalHandler.GetByID)
 		})
 

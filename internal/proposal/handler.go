@@ -116,6 +116,21 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 	response.CursorPaginated(w, resp, nextCursorStr, nextCursor != nil)
 }
 
+func (h *Handler) ListPage(w http.ResponseWriter, r *http.Request) {
+	limit := parseIntParam(r.URL.Query().Get("limit"), 10)
+	page := parseIntParam(r.URL.Query().Get("page"), 1)
+
+	status := r.URL.Query().Get("status")
+
+	resp, total, err := h.svc.ListPage(r.Context(), status, limit, page)
+	if err != nil {
+		handleError(w, err)
+		return
+	}
+
+	response.Paginated(w, resp, page, limit, int64(total))
+}
+
 func (h *Handler) UploadDocument(w http.ResponseWriter, r *http.Request) {
 	proposalID := chi.URLParam(r, "id")
 
