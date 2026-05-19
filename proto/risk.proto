@@ -1,0 +1,24 @@
+syntax = "proto3";
+
+package risk;
+
+option go_package = "github.com/rizky/smart-grant/proto/risk";
+
+service RiskService {
+  rpc CalculateRisk(CalculateRiskRequest) returns (CalculateRiskResponse);
+}
+
+message CalculateRiskRequest {
+  string proposal_id = 1;
+  string applicant_id = 2;
+  double nominal_amount = 3;
+  string organization = 4;
+  repeated string document_types = 5;
+}
+
+message CalculateRiskResponse {
+  string proposal_id = 1;
+  string risk_level = 2;
+  double confidence = 3;
+  map<string, double> feature_importance = 4;
+}

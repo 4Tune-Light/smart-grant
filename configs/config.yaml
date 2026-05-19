@@ -1,0 +1,56 @@
+app:
+  name: smart-grant
+  env: development
+  debug: true
+
+server:
+  http:
+    host: 0.0.0.0
+    port: 8080
+    read_timeout: 10s
+    write_timeout: 10s
+    idle_timeout: 60s
+  grpc:
+    host: 0.0.0.0
+    port: 9090
+
+gateway:
+  http:
+    host: 0.0.0.0
+    port: 8081
+    read_timeout: 10s
+    write_timeout: 10s
+  rate_limit: 100
+
+database:
+  postgres:
+    host: localhost
+    port: 5432
+    user: postgres
+    password: postgres
+    dbname: smart_grant
+    sslmode: disable
+    max_open_conns: 25
+    max_idle_conns: 10
+    conn_max_lifetime: 5m
+    conn_max_idle_time: 1m
+
+redis:
+  host: localhost
+  port: 6379
+  password: ""
+  db: 0
+  pool_size: 10
+  min_idle_conns: 3
+
+otel:
+  service_name: smart-grant
+  environment: development
+  endpoint: localhost:4317
+  insecure: true
+  trace_ratio: 0.1
+
+jwt:
+  secret: change-me-in-production-min-32-chars-long
+  access_ttl: 15m
+  refresh_ttl: 720h
