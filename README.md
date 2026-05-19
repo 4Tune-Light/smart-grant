@@ -5,6 +5,9 @@
 
 [![Go Version](https://img.shields.io/badge/go-1.26-blue)](https://go.dev/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Tests](https://img.shields.io/badge/tests-46%20passing-brightgreen)]()
+[![Coverage](https://img.shields.io/badge/coverage-60%25-yellowgreen)]()
+[![OpenAPI](https://img.shields.io/badge/OpenAPI-3.1.0-blue)](docs/openapi.yaml)
 
 ---
 
@@ -23,49 +26,19 @@
 ```
 Client (SPA)
     |
-API Gateway (REST — rate limiter, JWT passthrough)
+API Gateway (port 8081 — rate limiter, JWT passthrough, security headers)
     |
-Backend Service (HTTP + gRPC)
+Backend Service (port 8080 HTTP + 9090 gRPC)
     |
-    --- PostgreSQL  (source of truth)
-    --- Redis       (cache / async queue via Streams)
-    --- Worker      (async: risk scoring, notifications)
+    --- PostgreSQL 16  (source of truth)
+    --- Redis 7       (cache + async queue via Streams)
+    --- MinIO         (S3-compatible file storage)
+    --- Worker        (async: notification delivery)
     |
 OpenTelemetry Collector
     |
-    --- Prometheus  (metrics)
-    --- Jaeger      (distributed tracing)
-```
-
-## Project Structure
-
-```
-├── cmd/
-│   ├── api-gateway/      REST API gateway with rate limiting and auth
-│   ├── backend/          Core backend service (REST handlers + gRPC)
-│   └── worker/           Async worker (Redis Streams consumer)
-├── internal/
-│   ├── auth/             Authentication, JWT, RBAC
-│   ├── proposal/         Proposal CRUD and lifecycle management
-│   ├── review/           Review scoring and approval workflow
-│   ├── risk/             C4.5 decision tree risk scoring engine
-│   ├── audit/            Immutable audit trail logger
-│   ├── notification/     Notification system with SSE
-│   ├── config/           Config loader and type definitions
-│   ├── middleware/        HTTP middleware (auth, logger, CORS, recovery)
-│   ├── server/            Server abstractions (HTTP, gRPC, Manager)
-│   └── telemetry/         OpenTelemetry SDK initialization
-├── pkg/
-│   ├── database/          PostgreSQL and Redis client factories
-│   └── response/          Standard JSON API response helpers
-├── proto/                 Protocol Buffer definitions (gRPC)
-├── configs/               YAML configuration files
-├── deploy/                Docker and infrastructure files
-├── migrations/            SQL migration files
-├── scripts/               Utility scripts (migration runner, seed data)
-├── .env.example           Environment variable template
-├── Makefile               Build automation
-└── README.md
+    --- Prometheus  (metrics, port 9090)
+    --- Jaeger      (distributed tracing, port 16686)
 ```
 
 ## Quick Start
@@ -78,125 +51,135 @@ cd smart-grant
 # 2. Copy environment
 cp .env.example .env
 
-# 3. Start dependencies (PostgreSQL, Redis, OTel)
-docker compose -f deploy/docker-compose.yml up postgres redis -d
+# 3. Start all infrastructure
+docker compose -f deploy/docker-compose.yml up -d
 
-# 4. Run migrations
+# 4. Run database migrations
 go run ./scripts/migrate.go up
 
-# 5. Start backend (terminal 1)
-make run-backend
+# 5. Start services (3 terminals)
+make run-backend       # terminal 1
+make run-api-gateway   # terminal 2
+make run-worker        # terminal 3
 
-# 6. Start API gateway (terminal 2)
-make run-api-gateway
-
-# 7. Start worker (terminal 3)
-make run-worker
-
-# 8. Verify
+# 6. Test
 curl http://localhost:8081/health
 # {"status":"ok"}
 ```
 
-## Makefile Commands
-
-| Command | Description |
-|---------|-------------|
-| `make build` | Build all service binaries |
-| `make run-api-gateway` | Run API Gateway locally |
-| `make run-backend` | Run Backend Service locally |
-| `make run-worker` | Run Worker locally |
-| `make dev` | Start full stack with Docker Compose |
-| `make migrate-up` | Run database migrations |
-| `make migrate-down` | Rollback database migrations |
-| `make test` | Run all tests with race detection |
-| `make proto` | Generate protobuf stubs |
-
-## API Endpoints
-
-### Auth
+## API Overview
 
 | Method | Path | Role | Description |
 |--------|------|------|-------------|
-| POST | `/api/v1/auth/register` | public | Register new user |
+| POST | `/api/v1/auth/register` | public | Register |
 | POST | `/api/v1/auth/login` | public | Login |
-| POST | `/api/v1/auth/refresh` | public | Refresh access token |
+| POST | `/api/v1/auth/refresh` | public | Refresh token |
+| GET | `/api/v1/users` | admin | List users |
+| PATCH | `/api/v1/users/{id}/role` | admin | Update role |
+| GET | `/api/v1/proposals` | all | List (cursor) |
+| GET | `/api/v1/proposals/page` | all | List (page) |
+| POST | `/api/v1/proposals` | applicant | Create |
+| PUT | `/api/v1/proposals/{id}` | applicant | Update |
+| POST | `/api/v1/proposals/{id}/submit` | applicant | Submit |
+| POST | `/api/v1/proposals/{id}/documents` | applicant | Upload file |
+| GET | `/api/v1/proposals/{id}/documents` | all | List files |
+| GET | `/api/v1/proposals/{id}` | all | Get detail |
+| POST | `/api/v1/reviews/{id}` | reviewer | Create review |
+| GET | `/api/v1/reviews/{id}` | all | Get reviews |
+| POST | `/api/v1/reviews/{id}/approve` | admin | Approve |
+| POST | `/api/v1/reviews/{id}/reject` | admin | Reject |
+| POST | `/api/v1/risk/{id}` | admin, reviewer | Score proposal |
+| GET | `/api/v1/risk/{id}` | admin, reviewer | Get score |
+| GET | `/api/v1/audit-logs` | admin | Audit trail |
+| GET | `/api/v1/notifications` | all | My notifications |
+| GET | `/api/v1/notifications/stream` | all | SSE stream |
+| PATCH | `/api/v1/notifications/read?id=` | all | Mark read |
 
-### Proposals
+Full documentation: [docs/openapi.yaml](docs/openapi.yaml)
 
-| Method | Path | Role | Description |
-|--------|------|------|-------------|
-| GET | `/api/v1/proposals` | all | List proposals (filtered by role) |
-| POST | `/api/v1/proposals` | applicant | Create proposal |
-| GET | `/api/v1/proposals/:id` | all | Get proposal detail |
-| PUT | `/api/v1/proposals/:id` | applicant | Update proposal |
-| POST | `/api/v1/proposals/:id/submit` | applicant | Submit for review |
-| POST | `/api/v1/proposals/:id/documents` | applicant | Upload document |
-| GET | `/api/v1/proposals/:id/documents` | all | List documents |
+## Testing
 
-### Reviews
+```bash
+# Unit tests (fast, no Docker)
+make test
 
-| Method | Path | Role | Description |
-|--------|------|------|-------------|
-| POST | `/api/v1/reviews/:proposal_id` | reviewer | Submit review |
-| GET | `/api/v1/reviews/:proposal_id` | all | Get review |
-| POST | `/api/v1/reviews/:id/approve` | admin | Approve proposal |
-| POST | `/api/v1/reviews/:id/reject` | admin | Reject proposal |
+# Integration + E2E tests (requires Docker)
+make test-integration
 
-### Risk Scoring
+# Coverage report
+make test-coverage
 
-| Method | Path | Role | Description |
-|--------|------|------|-------------|
-| GET | `/api/v1/risk/:proposal_id` | admin, reviewer | Get risk score |
+# Current: 46 tests across 6 domains
+go test -short -v -count=1 ./...
+```
 
-### Audit & Notifications
+### Test layers
 
-| Method | Path | Role | Description |
-|--------|------|------|-------------|
-| GET | `/api/v1/audit-logs` | admin | Query audit trail |
-| GET | `/api/v1/notifications` | all | List notifications |
-| GET | `/api/v1/notifications/stream` | all | SSE notification stream |
+| Layer | Tool | Scope |
+|---|---|---|
+| Unit (service) | Mock interfaces | Business logic — 34 tests |
+| Unit (handler) | `httptest` | HTTP handlers — 8 tests |
+| Integration | `testcontainers` | Real PostgreSQL — 3 tests |
+| E2E | `testcontainers` | Full grant flow — 1 test |
 
-### Analytics
+## Example Flow
 
-| Method | Path | Role | Description |
-|--------|------|------|-------------|
-| GET | `/api/v1/analytics/dashboard` | admin | Dashboard statistics |
+```bash
+# Register users
+curl -X POST http://localhost:8081/api/v1/auth/register \
+  -H "Content-Type: application/json" \
+  -d '{"email":"applicant@test.com","password":"pass1234","name":"Alice","role":"applicant"}'
+
+# Login
+TOKEN=$(curl -s -X POST http://localhost:8081/api/v1/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"applicant@test.com","password":"pass1234"}' | jq -r '.data.access_token')
+
+# Create proposal
+curl -X POST http://localhost:8081/api/v1/proposals \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"title":"Research Grant","description":"Funding for AI research","nominal_amount":500000000,"organization":"AI Lab"}'
+
+# Submit
+curl -X POST http://localhost:8081/api/v1/proposals/{id}/submit \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+## Tech Stack
+
+| Layer | Technology |
+|---|---|
+| Language | Go 1.26 |
+| HTTP Router | chi |
+| Database | PostgreSQL 16 (pgx v5) |
+| Cache / Queue | Redis 7 (go-redis) |
+| File Storage | MinIO (S3-compatible) |
+| RPC | gRPC + protobuf |
+| Auth | JWT + argon2id |
+| Observability | OpenTelemetry → Prometheus + Jaeger |
+| Risk Engine | C4.5 Decision Tree (from scratch) |
+| Container | Docker + Docker Compose |
+| Testing | testify + testcontainers |
+| Base Template | [go-scaffold](https://github.com/rizky/go-scaffold) |
 
 ## Deployment
 
-### Docker Compose
-
 ```bash
-# Deploy full stack
+# Full stack with Docker
 docker compose -f deploy/docker-compose.yml up --build -d
 
 # Run migrations
 docker compose -f deploy/docker-compose.yml run migrate
 ```
 
-### Production Checklist
-
+Production checklist:
 - [ ] Set strong `JWT_SECRET` via environment variable
-- [ ] Configure PostgreSQL with proper credentials and SSL
-- [ ] Use managed Redis (Upstash / ElastiCache) for production
-- [ ] Set up Prometheus + Grafana dashboards
-- [ ] Add nginx reverse proxy with TLS termination
-- [ ] Configure database backups and point-in-time recovery
-- [ ] Set rate limiting values appropriate for production traffic
-- [ ] Enable structured JSON logging and log aggregation
-
-## Tech Stack
-
-- **Language:** Go 1.26
-- **HTTP Router:** chi
-- **Database:** PostgreSQL 16 (pgx v5)
-- **Cache / Queue:** Redis 7 (go-redis)
-- **RPC:** gRPC (with protobuf)
-- **Observability:** OpenTelemetry → Prometheus + Jaeger
-- **Risk Engine:** C4.5 Decision Tree (from scratch)
-- **Container:** Docker + Docker Compose
-- **Base Template:** [go-scaffold](https://github.com/rizky/go-scaffold)
+- [ ] Use managed PostgreSQL + Redis
+- [ ] Add nginx reverse proxy with TLS
+- [ ] Configure Prometheus + Grafana dashboards
+- [ ] Enable structured JSON logging
+- [ ] Database backups
 
 ## License
 

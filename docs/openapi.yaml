@@ -1,0 +1,468 @@
+openapi: 3.1.0
+info:
+  title: Smart Grant Review Platform
+  version: 1.0.0
+  description: AI-assisted risk scoring and grant review platform.
+
+servers:
+  - url: http://localhost:8081
+    description: API Gateway
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    Error:
+      type: object
+      properties:
+        success: { type: boolean, example: false }
+        error:
+          type: object
+          properties:
+            code: { type: string }
+            message: { type: string }
+
+    AuthResponse:
+      type: object
+      properties:
+        access_token: { type: string }
+        refresh_token: { type: string }
+        token_type: { type: string, example: Bearer }
+        expires_in: { type: integer }
+        user:
+          type: object
+          properties:
+            id: { type: string }
+            email: { type: string }
+            name: { type: string }
+            role: { type: string }
+
+    RegisterRequest:
+      type: object
+      required: [email, password, name, role]
+      properties:
+        email: { type: string, format: email }
+        password: { type: string, minLength: 8 }
+        name: { type: string, minLength: 2 }
+        role: { type: string, enum: [applicant, reviewer] }
+
+    LoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email: { type: string }
+        password: { type: string }
+
+    RefreshRequest:
+      type: object
+      required: [refresh_token]
+      properties:
+        refresh_token: { type: string }
+
+    ProposalResponse:
+      type: object
+      properties:
+        id: { type: string }
+        title: { type: string }
+        description: { type: string }
+        nominal_amount: { type: number }
+        organization: { type: string }
+        status: { type: string, enum: [draft, submitted, in_review, approved, rejected] }
+        version: { type: integer }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+
+    CreateProposalRequest:
+      type: object
+      required: [title, description, nominal_amount, organization]
+      properties:
+        title: { type: string, minLength: 3 }
+        description: { type: string, minLength: 10 }
+        nominal_amount: { type: number, exclusiveMinimum: 0 }
+        organization: { type: string, minLength: 2 }
+
+    ReviewResponse:
+      type: object
+      properties:
+        id: { type: string }
+        proposal_id: { type: string }
+        reviewer_name: { type: string }
+        score: { type: integer }
+        comment: { type: string }
+        status: { type: string }
+        created_at: { type: string }
+
+    CreateReviewRequest:
+      type: object
+      required: [score, comment]
+      properties:
+        score: { type: integer, minimum: 0, maximum: 100 }
+        comment: { type: string, minLength: 10 }
+
+    RiskResponse:
+      type: object
+      properties:
+        risk_level: { type: string, enum: [low, medium, high] }
+        confidence: { type: number }
+        features: { type: object }
+
+    AuditResponse:
+      type: object
+      properties:
+        id: { type: string }
+        entity_type: { type: string }
+        entity_id: { type: string }
+        action: { type: string }
+        actor_id: { type: string }
+        old_values: { type: string }
+        new_values: { type: string }
+        created_at: { type: string }
+
+    NotificationResponse:
+      type: object
+      properties:
+        id: { type: string }
+        type: { type: string }
+        title: { type: string }
+        body: { type: string }
+        is_read: { type: boolean }
+        created_at: { type: string }
+
+    CursorMeta:
+      type: object
+      properties:
+        next_cursor: { type: string }
+        has_more: { type: boolean }
+
+    PageMeta:
+      type: object
+      properties:
+        page: { type: integer }
+        per_page: { type: integer }
+        total: { type: integer }
+        total_pages: { type: integer }
+
+paths:
+  /api/v1/auth/register:
+    post:
+      summary: Register new user
+      tags: [Auth]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RegisterRequest' }
+      responses:
+        '201': { description: User registered, content: { application/json: { schema: { $ref: '#/components/schemas/AuthResponse' } } } }
+        '400': { description: Validation error }
+        '409': { description: Email already exists }
+
+  /api/v1/auth/login:
+    post:
+      summary: Login
+      tags: [Auth]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/LoginRequest' }
+      responses:
+        '200': { description: Login successful, content: { application/json: { schema: { $ref: '#/components/schemas/AuthResponse' } } } }
+        '401': { description: Invalid credentials }
+
+  /api/v1/auth/refresh:
+    post:
+      summary: Refresh access token
+      tags: [Auth]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RefreshRequest' }
+      responses:
+        '200': { description: Token refreshed }
+        '401': { description: Invalid or expired token }
+
+  /api/v1/proposals:
+    get:
+      summary: List proposals (cursor-based)
+      tags: [Proposal]
+      security: [{ BearerAuth: [] }]
+      parameters:
+        - { name: cursor, in: query, schema: { type: string } }
+        - { name: limit, in: query, schema: { type: integer, default: 10 } }
+        - { name: status, in: query, schema: { type: string } }
+      responses:
+        '200':
+          description: Paginated proposals
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: '#/components/schemas/ProposalResponse' } }
+                  meta: { $ref: '#/components/schemas/CursorMeta' }
+
+  /api/v1/proposals/page:
+    get:
+      summary: List proposals (page-based)
+      tags: [Proposal]
+      security: [{ BearerAuth: [] }]
+      parameters:
+        - { name: page, in: query, schema: { type: integer, default: 1 } }
+        - { name: limit, in: query, schema: { type: integer, default: 10 } }
+        - { name: status, in: query, schema: { type: string } }
+      responses:
+        '200':
+          description: Paginated proposals
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: '#/components/schemas/ProposalResponse' } }
+                  meta: { $ref: '#/components/schemas/PageMeta' }
+
+    post:
+      summary: Create proposal
+      tags: [Proposal]
+      security: [{ BearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateProposalRequest' }
+      responses:
+        '201': { description: Proposal created }
+
+  /api/v1/proposals/{id}:
+    get:
+      summary: Get proposal by ID
+      tags: [Proposal]
+      security: [{ BearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        '200': { description: Proposal detail }
+        '404': { description: Not found }
+
+    put:
+      summary: Update proposal (draft only)
+      tags: [Proposal]
+      security: [{ BearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateProposalRequest' }
+      responses:
+        '200': { description: Proposal updated }
+
+  /api/v1/proposals/{id}/submit:
+    post:
+      summary: Submit proposal for review
+      tags: [Proposal]
+      security: [{ BearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        '200': { description: Proposal submitted }
+
+  /api/v1/proposals/{id}/documents:
+    post:
+      summary: Upload document
+      tags: [Proposal]
+      security: [{ BearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file:
+                  type: string
+                  format: binary
+      responses:
+        '201': { description: Document uploaded }
+
+    get:
+      summary: List documents
+      tags: [Proposal]
+      security: [{ BearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        '200': { description: Document list }
+
+  /api/v1/reviews/{id}:
+    get:
+      summary: Get reviews for a proposal
+      tags: [Review]
+      security: [{ BearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: Reviews
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: '#/components/schemas/ReviewResponse' } }
+
+    post:
+      summary: Submit review
+      tags: [Review]
+      security: [{ BearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateReviewRequest' }
+      responses:
+        '201': { description: Review created }
+
+  /api/v1/reviews/{id}/approve:
+    post:
+      summary: Approve proposal (admin only)
+      tags: [Review]
+      security: [{ BearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        '200': { description: Proposal approved }
+
+  /api/v1/reviews/{id}/reject:
+    post:
+      summary: Reject proposal (admin only)
+      tags: [Review]
+      security: [{ BearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        '200': { description: Proposal rejected }
+
+  /api/v1/risk/{id}:
+    post:
+      summary: Calculate risk score
+      tags: [Risk]
+      security: [{ BearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        '200': { description: Risk score calculated, content: { application/json: { schema: { $ref: '#/components/schemas/RiskResponse' } } } }
+
+    get:
+      summary: Get existing risk score
+      tags: [Risk]
+      security: [{ BearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        '200': { description: Risk score, content: { application/json: { schema: { $ref: '#/components/schemas/RiskResponse' } } } }
+
+  /api/v1/audit-logs:
+    get:
+      summary: List audit logs (admin only)
+      tags: [Audit]
+      security: [{ BearerAuth: [] }]
+      parameters:
+        - { name: entity_type, in: query, schema: { type: string } }
+        - { name: actor_id, in: query, schema: { type: string } }
+        - { name: action, in: query, schema: { type: string } }
+        - { name: limit, in: query, schema: { type: integer, default: 20 } }
+        - { name: cursor, in: query, schema: { type: string } }
+      responses:
+        '200':
+          description: Audit logs
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: '#/components/schemas/AuditResponse' } }
+                  meta: { $ref: '#/components/schemas/CursorMeta' }
+
+  /api/v1/notifications:
+    get:
+      summary: List notifications
+      tags: [Notification]
+      security: [{ BearerAuth: [] }]
+      parameters:
+        - { name: limit, in: query, schema: { type: integer, default: 20 } }
+        - { name: cursor, in: query, schema: { type: string } }
+      responses:
+        '200':
+          description: Notifications
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: '#/components/schemas/NotificationResponse' } }
+                  meta: { $ref: '#/components/schemas/CursorMeta' }
+
+  /api/v1/notifications/stream:
+    get:
+      summary: SSE notification stream
+      tags: [Notification]
+      security: [{ BearerAuth: [] }]
+      responses:
+        '200':
+          description: Event stream
+          content:
+            text/event-stream:
+              schema:
+                type: string
+
+  /api/v1/notifications/read:
+    patch:
+      summary: Mark notification as read
+      tags: [Notification]
+      security: [{ BearerAuth: [] }]
+      parameters:
+        - { name: id, in: query, required: true, schema: { type: string } }
+      responses:
+        '200': { description: Marked as read }
+
+  /api/v1/users:
+    get:
+      summary: List users (admin only)
+      tags: [Users]
+      security: [{ BearerAuth: [] }]
+      parameters:
+        - { name: role, in: query, schema: { type: string, enum: [admin, reviewer, applicant] } }
+        - { name: page, in: query, schema: { type: integer, default: 1 } }
+        - { name: limit, in: query, schema: { type: integer, default: 20 } }
+      responses:
+        '200': { description: User list }
+
+  /api/v1/users/{id}/role:
+    patch:
+      summary: Update user role (admin only)
+      tags: [Users]
+      security: [{ BearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                role: { type: string, enum: [admin, reviewer, applicant] }
+      responses:
+        '200': { description: Role updated }
+        '403': { description: Cannot change own role }
