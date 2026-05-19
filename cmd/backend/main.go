@@ -8,10 +8,12 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	chimiddleware "github.com/go-chi/chi/v5/middleware"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	"google.golang.org/grpc"
 
+	"github.com/rizky/smart-grant/internal/auth"
 	"github.com/rizky/smart-grant/internal/config"
 	"github.com/rizky/smart-grant/internal/middleware"
 	"github.com/rizky/smart-grant/internal/server"
@@ -66,7 +68,7 @@ func main() {
 		cfg.Server.HTTP.ReadTimeout,
 	)
 
-	registerRoutes(httpSrv.Router())
+	registerRoutes(httpSrv.Router(), cfg, pgPool)
 
 	grpcSrv, err := server.NewGRPCServer(
 		"backend-grpc",
@@ -116,7 +118,7 @@ func buildPostgresDSN(cfg *config.Config) database.PostgresConfig {
 	}
 }
 
-func registerRoutes(r chi.Router) {
+func registerRoutes(r chi.Router, cfg *config.Config, pool *pgxpool.Pool) {
 	r.Use(chimiddleware.RequestID)
 	r.Use(middleware.RequestID)
 	r.Use(middleware.Logger)
@@ -127,6 +129,20 @@ func registerRoutes(r chi.Router) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte(`{"status":"ok"}`))
+	})
+
+	authRepo := auth.NewRepository(pool)
+	authSvc := auth.NewService(authRepo, auth.TokenConfig{
+		Secret:     cfg.JWT.Secret,
+		AccessTTL:  cfg.JWT.AccessTTL,
+		RefreshTTL: cfg.JWT.RefreshTTL,
+	})
+	authHandler := auth.NewHandler(authSvc)
+
+	r.Route("/api/v1/auth", func(r chi.Router) {
+		r.Post("/register", authHandler.Register)
+		r.Post("/login", authHandler.Login)
+		r.Post("/refresh", authHandler.RefreshToken)
 	})
 }
 
