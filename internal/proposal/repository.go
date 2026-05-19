@@ -25,7 +25,7 @@ type Document struct {
 	ID         string    `json:"id"`
 	ProposalID string    `json:"proposal_id"`
 	Filename   string    `json:"filename"`
-	FilePath   string    `json:"file_path"`
+	FileURL   string    `json:"file_url"`
 	MimeType   string    `json:"mime_type"`
 	FileSize   int64     `json:"file_size"`
 	UploadedAt time.Time `json:"uploaded_at"`
@@ -203,18 +203,18 @@ func (r *repository) CreateVersion(ctx context.Context, proposalID string, versi
 
 func (r *repository) CreateDocument(ctx context.Context, d *Document) error {
 	query := `
-		INSERT INTO proposal_documents (proposal_id, filename, file_path, mime_type, file_size)
+		INSERT INTO proposal_documents (proposal_id, filename, file_url, mime_type, file_size)
 		VALUES ($1, $2, $3, $4, $5)
 		RETURNING id, uploaded_at`
 
 	return r.pool.QueryRow(ctx, query,
-		d.ProposalID, d.Filename, d.FilePath, d.MimeType, d.FileSize,
+		d.ProposalID, d.Filename, d.FileURL, d.MimeType, d.FileSize,
 	).Scan(&d.ID, &d.UploadedAt)
 }
 
 func (r *repository) FindDocuments(ctx context.Context, proposalID string) ([]Document, error) {
 	query := `
-		SELECT id, proposal_id, filename, file_path, mime_type, file_size, uploaded_at
+		SELECT id, proposal_id, filename, file_url, mime_type, file_size, uploaded_at
 		FROM proposal_documents WHERE proposal_id = $1
 		ORDER BY uploaded_at DESC`
 
@@ -227,7 +227,7 @@ func (r *repository) FindDocuments(ctx context.Context, proposalID string) ([]Do
 	var docs []Document
 	for rows.Next() {
 		var d Document
-		if err := rows.Scan(&d.ID, &d.ProposalID, &d.Filename, &d.FilePath,
+		if err := rows.Scan(&d.ID, &d.ProposalID, &d.Filename, &d.FileURL,
 			&d.MimeType, &d.FileSize, &d.UploadedAt); err != nil {
 			return nil, err
 		}

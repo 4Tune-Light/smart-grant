@@ -19,7 +19,7 @@ CREATE TABLE IF NOT EXISTS proposal_documents (
     id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     proposal_id  UUID         NOT NULL REFERENCES proposals(id) ON DELETE CASCADE,
     filename     VARCHAR(255) NOT NULL,
-    file_path    TEXT         NOT NULL,
+    file_url     TEXT         NOT NULL,
     mime_type    VARCHAR(100) NOT NULL,
     file_size    BIGINT       NOT NULL DEFAULT 0,
     uploaded_at  TIMESTAMPTZ  NOT NULL DEFAULT now()

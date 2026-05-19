@@ -196,7 +196,7 @@ func (s *service) UploadDocument(ctx context.Context, proposalID string, file io
 	d := &Document{
 		ProposalID: proposalID,
 		Filename:   header.Filename,
-		FilePath:   fileURL,
+		FileURL:   fileURL,
 		MimeType:   contentType,
 		FileSize:   header.Size,
 	}
