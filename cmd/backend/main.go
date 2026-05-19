@@ -13,6 +13,7 @@ import (
 	"github.com/rs/zerolog/log"
 	"google.golang.org/grpc"
 
+	"github.com/rizky/smart-grant/internal/audit"
 	"github.com/rizky/smart-grant/internal/auth"
 	"github.com/rizky/smart-grant/internal/config"
 	"github.com/rizky/smart-grant/internal/middleware"
@@ -149,6 +150,9 @@ func registerRoutes(r chi.Router, cfg *config.Config, pool *pgxpool.Pool) {
 		r.Post("/refresh", authHandler.RefreshToken)
 	})
 
+	auditRepo := audit.NewRepository(pool)
+	auditSvc := audit.NewService(auditRepo)
+
 	proposalRepo := proposal.NewRepository(pool)
 
 	minioStore, err := storage.NewMinio(storage.Config{
@@ -164,7 +168,7 @@ func registerRoutes(r chi.Router, cfg *config.Config, pool *pgxpool.Pool) {
 		minioStore = nil
 	}
 
-	proposalSvc := proposal.NewService(proposalRepo, minioStore)
+	proposalSvc := proposal.NewService(proposalRepo, minioStore, auditSvc)
 	proposalHandler := proposal.NewHandler(proposalSvc)
 
 	r.Route("/api/v1/proposals", func(r chi.Router) {
@@ -186,7 +190,7 @@ func registerRoutes(r chi.Router, cfg *config.Config, pool *pgxpool.Pool) {
 	})
 
 	reviewRepo := review.NewRepository(pool)
-	reviewSvc := review.NewService(reviewRepo, proposalRepo)
+	reviewSvc := review.NewService(reviewRepo, proposalRepo, auditSvc)
 	reviewHandler := review.NewHandler(reviewSvc)
 
 	r.Route("/api/v1/reviews", func(r chi.Router) {
@@ -218,6 +222,14 @@ func registerRoutes(r chi.Router, cfg *config.Config, pool *pgxpool.Pool) {
 		r.Use(middleware.RequireRole("admin", "reviewer"))
 		r.Post("/{id}", riskHandler.Score)
 		r.Get("/{id}", riskHandler.GetScore)
+	})
+
+	auditHandler := audit.NewHandler(auditSvc)
+	r.Route("/api/v1/audit-logs", func(r chi.Router) {
+		r.Use(middleware.Authenticate(cfg.JWT.Secret))
+		r.Use(middleware.RequireRole("admin"))
+		r.Get("/", auditHandler.List)
+		r.Get("/{entity_id}", auditHandler.List)
 	})
 }
 

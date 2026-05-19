@@ -2,7 +2,9 @@ package review
 
 import (
 	"context"
+	"fmt"
 
+	"github.com/rizky/smart-grant/internal/audit"
 	"github.com/rizky/smart-grant/internal/middleware"
 	"github.com/rizky/smart-grant/internal/proposal"
 )
@@ -15,12 +17,13 @@ type Service interface {
 }
 
 type service struct {
-	repo      Repository
+	repo         Repository
 	proposalRepo proposal.Repository
+	audit        audit.Service
 }
 
-func NewService(repo Repository, proposalRepo proposal.Repository) Service {
-	return &service{repo: repo, proposalRepo: proposalRepo}
+func NewService(repo Repository, proposalRepo proposal.Repository, a audit.Service) Service {
+	return &service{repo: repo, proposalRepo: proposalRepo, audit: a}
 }
 
 func (s *service) Create(ctx context.Context, proposalID string, req CreateReviewRequest) (*ReviewResponse, error) {
@@ -65,6 +68,14 @@ func (s *service) Create(ctx context.Context, proposalID string, req CreateRevie
 		return nil, err
 	}
 
+	s.audit.Log(ctx, audit.LogEntry{
+		EntityType: "review",
+		EntityID:   rev.ID,
+		Action:     "create",
+		ActorID:    userID,
+		NewValues:  fmt.Sprintf(`{"proposal_id":"%s","score":%d,"status":"pending"}`, proposalID, req.Score),
+	})
+
 	return toResponse(rev), nil
 }
 
@@ -95,6 +106,7 @@ func (s *service) GetByProposal(ctx context.Context, proposalID string) ([]Revie
 
 func (s *service) Approve(ctx context.Context, proposalID string) (*ReviewResponse, error) {
 	role, _ := ctx.Value(middleware.AuthRoleKey).(string)
+	userID, _ := ctx.Value(middleware.AuthUserIDKey).(string)
 	if role != "admin" {
 		return nil, ErrNotAdmin
 	}
@@ -112,6 +124,14 @@ func (s *service) Approve(ctx context.Context, proposalID string) (*ReviewRespon
 		return nil, err
 	}
 
+	s.audit.Log(ctx, audit.LogEntry{
+		EntityType: "proposal",
+		EntityID:   proposalID,
+		Action:     "approve",
+		ActorID:    userID,
+		NewValues:  fmt.Sprintf(`{"proposal_id":"%s","status":"approved"}`, proposalID),
+	})
+
 	return &ReviewResponse{
 		ProposalID: proposalID,
 		Status:     "approved",
@@ -120,6 +140,7 @@ func (s *service) Approve(ctx context.Context, proposalID string) (*ReviewRespon
 
 func (s *service) Reject(ctx context.Context, proposalID string) (*ReviewResponse, error) {
 	role, _ := ctx.Value(middleware.AuthRoleKey).(string)
+	userID, _ := ctx.Value(middleware.AuthUserIDKey).(string)
 	if role != "admin" {
 		return nil, ErrNotAdmin
 	}
@@ -136,6 +157,14 @@ func (s *service) Reject(ctx context.Context, proposalID string) (*ReviewRespons
 	if err := s.repo.UpdateProposalStatus(ctx, proposalID, "rejected"); err != nil {
 		return nil, err
 	}
+
+	s.audit.Log(ctx, audit.LogEntry{
+		EntityType: "proposal",
+		EntityID:   proposalID,
+		Action:     "reject",
+		ActorID:    userID,
+		NewValues:  fmt.Sprintf(`{"proposal_id":"%s","status":"rejected"}`, proposalID),
+	})
 
 	return &ReviewResponse{
 		ProposalID: proposalID,

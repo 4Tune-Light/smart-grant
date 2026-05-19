@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 
 	"github.com/google/uuid"
+	"github.com/rizky/smart-grant/internal/audit"
 	"github.com/rizky/smart-grant/internal/middleware"
 	"github.com/rizky/smart-grant/pkg/storage"
 )
@@ -26,10 +27,11 @@ type Service interface {
 type service struct {
 	repo    Repository
 	storage storage.FileStorage
+	audit   audit.Service
 }
 
-func NewService(repo Repository, st storage.FileStorage) Service {
-	return &service{repo: repo, storage: st}
+func NewService(repo Repository, st storage.FileStorage, a audit.Service) Service {
+	return &service{repo: repo, storage: st, audit: a}
 }
 
 func (s *service) Create(ctx context.Context, req CreateProposalRequest) (*ProposalResponse, error) {
@@ -56,6 +58,14 @@ func (s *service) Create(ctx context.Context, req CreateProposalRequest) (*Propo
 
 	snapshot, _ := json.Marshal(p)
 	s.repo.CreateVersion(ctx, p.ID, 1, string(snapshot))
+
+	s.audit.Log(ctx, audit.LogEntry{
+		EntityType: "proposal",
+		EntityID:   p.ID,
+		Action:     "create",
+		ActorID:    userID,
+		NewValues:  string(snapshot),
+	})
 
 	return toProposalResponse(p), nil
 }
@@ -98,6 +108,14 @@ func (s *service) Update(ctx context.Context, proposalID string, req UpdatePropo
 	snapshot, _ := json.Marshal(proposal)
 	s.repo.CreateVersion(ctx, proposal.ID, proposal.Version, string(snapshot))
 
+	s.audit.Log(ctx, audit.LogEntry{
+		EntityType: "proposal",
+		EntityID:   proposalID,
+		Action:     "update",
+		ActorID:    userID,
+		NewValues:  string(snapshot),
+	})
+
 	return toProposalResponse(proposal), nil
 }
 
@@ -122,6 +140,14 @@ func (s *service) Submit(ctx context.Context, proposalID string) (*ProposalRespo
 	if err := s.repo.Update(ctx, proposal); err != nil {
 		return nil, err
 	}
+
+	s.audit.Log(ctx, audit.LogEntry{
+		EntityType: "proposal",
+		EntityID:   proposalID,
+		Action:     "submit",
+		ActorID:    userID,
+		NewValues:  `{"status":"submitted"}`,
+	})
 
 	return toProposalResponse(proposal), nil
 }
