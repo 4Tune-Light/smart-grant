@@ -7,6 +7,7 @@ import (
 	chimiddleware "github.com/go-chi/chi/v5/middleware"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
+	"google.golang.org/grpc"
 
 	"github.com/rizky/smart-grant/internal/audit"
 	"github.com/rizky/smart-grant/internal/auth"
@@ -16,6 +17,8 @@ import (
 	"github.com/rizky/smart-grant/internal/proposal"
 	"github.com/rizky/smart-grant/internal/review"
 	"github.com/rizky/smart-grant/internal/risk"
+	riskpb "github.com/rizky/smart-grant/proto/risk"
+	notifpb "github.com/rizky/smart-grant/proto/notification"
 	"github.com/rizky/smart-grant/pkg/storage"
 )
 
@@ -201,4 +204,15 @@ func registerNotificationRoutes(r chi.Router, cfg *config.Config, h *notificatio
 		r.Get("/stream", h.Stream)
 		r.Patch("/read", h.MarkRead)
 	})
+}
+
+func RegisterGRPC(s *grpc.Server, pool *pgxpool.Pool) {
+	riskRepo := risk.NewRepository(pool)
+	proposalRepo := proposal.NewRepository(pool)
+	riskSvc := risk.NewService(riskRepo, proposalRepo)
+	riskpb.RegisterRiskServiceServer(s, risk.NewGRPCServer(riskSvc))
+
+	notifRepo := notification.NewRepository(pool)
+	notifSvc := notification.NewService(notifRepo, nil)
+	notifpb.RegisterNotificationServiceServer(s, notification.NewGRPCServer(notifSvc))
 }

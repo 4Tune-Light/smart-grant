@@ -54,6 +54,7 @@ func main() {
 	}
 
 	server.RegisterRoutes(httpSrv.Router(), cfg, pool, rdb)
+	server.RegisterGRPC(grpcSrv.Server(), pool)
 
 	mgr := server.NewManager(httpSrv, grpcSrv)
 
