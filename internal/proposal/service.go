@@ -4,8 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
+	"mime/multipart"
+	"path/filepath"
 
+	"github.com/google/uuid"
 	"github.com/rizky/smart-grant/internal/middleware"
+	"github.com/rizky/smart-grant/pkg/storage"
 )
 
 type Service interface {
@@ -14,16 +19,17 @@ type Service interface {
 	Submit(ctx context.Context, proposalID string) (*ProposalResponse, error)
 	GetByID(ctx context.Context, proposalID string) (*ProposalResponse, error)
 	List(ctx context.Context, status string, limit int, page int) ([]ProposalResponse, int, error)
-	UploadDocument(ctx context.Context, proposalID string, req DocumentUploadRequest) (*DocumentResponse, error)
+	UploadDocument(ctx context.Context, proposalID string, file io.Reader, header *multipart.FileHeader) (*DocumentResponse, error)
 	GetDocuments(ctx context.Context, proposalID string) ([]DocumentResponse, error)
 }
 
 type service struct {
-	repo Repository
+	repo    Repository
+	storage storage.FileStorage
 }
 
-func NewService(repo Repository) Service {
-	return &service{repo: repo}
+func NewService(repo Repository, st storage.FileStorage) Service {
+	return &service{repo: repo, storage: st}
 }
 
 func (s *service) Create(ctx context.Context, req CreateProposalRequest) (*ProposalResponse, error) {
@@ -139,6 +145,7 @@ func (s *service) GetByID(ctx context.Context, proposalID string) (*ProposalResp
 func (s *service) List(ctx context.Context, status string, limit int, page int) ([]ProposalResponse, int, error) {
 	userID, _ := ctx.Value(middleware.AuthUserIDKey).(string)
 	role, _ := ctx.Value(middleware.AuthRoleKey).(string)
+	_ = userID
 
 	var proposals []Proposal
 	var total int
@@ -161,7 +168,7 @@ func (s *service) List(ctx context.Context, status string, limit int, page int) 
 	return responses, total, nil
 }
 
-func (s *service) UploadDocument(ctx context.Context, proposalID string, req DocumentUploadRequest) (*DocumentResponse, error) {
+func (s *service) UploadDocument(ctx context.Context, proposalID string, file io.Reader, header *multipart.FileHeader) (*DocumentResponse, error) {
 	userID, _ := ctx.Value(middleware.AuthUserIDKey).(string)
 
 	proposal, err := s.repo.FindByID(ctx, proposalID)
@@ -173,14 +180,25 @@ func (s *service) UploadDocument(ctx context.Context, proposalID string, req Doc
 		return nil, ErrNotOwner
 	}
 
-	filePath := fmt.Sprintf("uploads/%s/%s", proposalID, req.Filename)
+	ext := filepath.Ext(header.Filename)
+	objectPath := fmt.Sprintf("proposals/%s/%s%s", proposalID, uuid.New().String(), ext)
+
+	contentType := header.Header.Get("Content-Type")
+	if contentType == "" {
+		contentType = "application/octet-stream"
+	}
+
+	fileURL, err := s.storage.Upload(ctx, objectPath, file, header.Size, contentType)
+	if err != nil {
+		return nil, fmt.Errorf("upload file: %w", err)
+	}
 
 	d := &Document{
 		ProposalID: proposalID,
-		Filename:   req.Filename,
-		FilePath:   filePath,
-		MimeType:   req.MimeType,
-		FileSize:   req.FileSize,
+		Filename:   header.Filename,
+		FilePath:   fileURL,
+		MimeType:   contentType,
+		FileSize:   header.Size,
 	}
 
 	if err := s.repo.CreateDocument(ctx, d); err != nil {

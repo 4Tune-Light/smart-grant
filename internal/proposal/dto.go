@@ -38,8 +38,4 @@ type DocumentResponse struct {
 	UploadedAt time.Time `json:"uploaded_at"`
 }
 
-type DocumentUploadRequest struct {
-	Filename string `json:"filename"  validate:"required"`
-	MimeType string `json:"mime_type" validate:"required"`
-	FileSize int64  `json:"file_size" validate:"required,gt=0"`
-}
+

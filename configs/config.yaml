@@ -43,6 +43,15 @@ redis:
   pool_size: 10
   min_idle_conns: 3
 
+storage:
+  minio:
+    endpoint: localhost:9000
+    access_key: minioadmin
+    secret_key: minioadmin
+    bucket: smart-grant
+    use_ssl: false
+    region: us-east-1
+
 otel:
   service_name: smart-grant
   environment: development

@@ -20,6 +20,7 @@ import (
 	"github.com/rizky/smart-grant/internal/review"
 	"github.com/rizky/smart-grant/internal/risk"
 	"github.com/rizky/smart-grant/internal/server"
+	"github.com/rizky/smart-grant/pkg/storage"
 	"github.com/rizky/smart-grant/internal/telemetry"
 	"github.com/rizky/smart-grant/pkg/database"
 )
@@ -149,7 +150,21 @@ func registerRoutes(r chi.Router, cfg *config.Config, pool *pgxpool.Pool) {
 	})
 
 	proposalRepo := proposal.NewRepository(pool)
-	proposalSvc := proposal.NewService(proposalRepo)
+
+	minioStore, err := storage.NewMinio(storage.Config{
+		Endpoint:  cfg.Storage.Minio.Endpoint,
+		AccessKey: cfg.Storage.Minio.AccessKey,
+		SecretKey: cfg.Storage.Minio.SecretKey,
+		Bucket:    cfg.Storage.Minio.Bucket,
+		UseSSL:    cfg.Storage.Minio.UseSSL,
+		Region:    cfg.Storage.Minio.Region,
+	})
+	if err != nil {
+		log.Warn().Err(err).Msg("MinIO not available, file upload will fail")
+		minioStore = nil
+	}
+
+	proposalSvc := proposal.NewService(proposalRepo, minioStore)
 	proposalHandler := proposal.NewHandler(proposalSvc)
 
 	r.Route("/api/v1/proposals", func(r chi.Router) {

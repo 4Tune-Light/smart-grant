@@ -104,18 +104,19 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) UploadDocument(w http.ResponseWriter, r *http.Request) {
 	proposalID := chi.URLParam(r, "id")
 
-	var req DocumentUploadRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		response.Error(w, http.StatusBadRequest, "invalid_request", "invalid request body")
+	if err := r.ParseMultipartForm(10 << 20); err != nil {
+		response.Error(w, http.StatusBadRequest, "invalid_request", "invalid multipart form")
 		return
 	}
 
-	if errs := validator.Struct(req); errs != nil {
-		response.Error(w, http.StatusBadRequest, "validation_error", errs[0].Message)
+	file, header, err := r.FormFile("file")
+	if err != nil {
+		response.Error(w, http.StatusBadRequest, "invalid_request", "file field is required")
 		return
 	}
+	defer file.Close()
 
-	resp, err := h.svc.UploadDocument(r.Context(), proposalID, req)
+	resp, err := h.svc.UploadDocument(r.Context(), proposalID, file, header)
 	if err != nil {
 		handleError(w, err)
 		return

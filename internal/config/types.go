@@ -8,8 +8,22 @@ type Config struct {
 	Gateway  Gateway  `mapstructure:"gateway"`
 	Database Database `mapstructure:"database"`
 	Redis    Redis    `mapstructure:"redis"`
+	Storage  Storage  `mapstructure:"storage"`
 	OTel     OTel     `mapstructure:"otel"`
 	JWT      JWT      `mapstructure:"jwt"`
+}
+
+type Storage struct {
+	Minio Minio `mapstructure:"minio"`
+}
+
+type Minio struct {
+	Endpoint  string `mapstructure:"endpoint"`
+	AccessKey string `mapstructure:"access_key"`
+	SecretKey string `mapstructure:"secret_key"`
+	Bucket    string `mapstructure:"bucket"`
+	UseSSL    bool   `mapstructure:"use_ssl"`
+	Region    string `mapstructure:"region"`
 }
 
 type App struct {
