@@ -22,6 +22,10 @@ func (m *mockRepository) FindByProposalID(ctx context.Context, proposalID string
 	return m.findByProposalFn(ctx, proposalID)
 }
 
+func (m *mockRepository) FindAll(ctx context.Context) ([]RiskScore, error) {
+	return nil, nil
+}
+
 type mockProposalRepo struct{}
 
 func (m *mockProposalRepo) Create(ctx context.Context, p *proposal.Proposal) error { return nil }

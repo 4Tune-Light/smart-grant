@@ -193,6 +193,12 @@ func registerRiskRoutes(r chi.Router, cfg *config.Config, h *risk.Handler) {
 		r.Post("/{id}", h.Score)
 		r.Get("/{id}", h.GetScore)
 	})
+
+	r.Route("/api/v1/risk/retrain", func(r chi.Router) {
+		r.Use(middleware.Authenticate(cfg.JWT.Secret))
+		r.Use(middleware.RequireRole("admin"))
+		r.Post("/", h.Retrain)
+	})
 }
 
 func registerAuditRoutes(r chi.Router, cfg *config.Config, h *audit.Handler) {

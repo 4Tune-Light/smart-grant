@@ -22,6 +22,7 @@ type RiskScore struct {
 type Repository interface {
 	Save(ctx context.Context, score *RiskScore) error
 	FindByProposalID(ctx context.Context, proposalID string) (*RiskScore, error)
+	FindAll(ctx context.Context) ([]RiskScore, error)
 }
 
 type repository struct {
@@ -61,4 +62,23 @@ func (r *repository) FindByProposalID(ctx context.Context, proposalID string) (*
 		return nil, err
 	}
 	return score, nil
+}
+
+func (r *repository) FindAll(ctx context.Context) ([]RiskScore, error) {
+	query := `SELECT id, proposal_id, risk_level, confidence, features, details, model_version, created_at FROM risk_scores ORDER BY created_at DESC`
+	rows, err := r.pool.Query(ctx, query)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var scores []RiskScore
+	for rows.Next() {
+		var s RiskScore
+		if err := rows.Scan(&s.ID, &s.ProposalID, &s.RiskLevel, &s.Confidence, &s.Features, &s.Details, &s.ModelVersion, &s.CreatedAt); err != nil {
+			return nil, err
+		}
+		scores = append(scores, s)
+	}
+	return scores, nil
 }

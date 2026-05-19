@@ -28,6 +28,16 @@ func (h *Handler) Score(w http.ResponseWriter, r *http.Request) {
 	response.JSON(w, http.StatusOK, resp)
 }
 
+func (h *Handler) Retrain(w http.ResponseWriter, r *http.Request) {
+	resp, err := h.svc.Retrain(r.Context())
+	if err != nil {
+		handleError(w, err)
+		return
+	}
+
+	response.JSON(w, http.StatusOK, resp)
+}
+
 func (h *Handler) GetScore(w http.ResponseWriter, r *http.Request) {
 	proposalID := chi.URLParam(r, "id")
 

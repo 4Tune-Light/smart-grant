@@ -18,12 +18,22 @@ import (
 type Service interface {
 	Score(ctx context.Context, proposalID string) (*RiskResponse, error)
 	GetScore(ctx context.Context, proposalID string) (*RiskResponse, error)
+	Retrain(ctx context.Context) (*RetrainResponse, error)
+}
+
+type RetrainResponse struct {
+	PreviousVersion string `json:"previous_version"`
+	NewVersion      string `json:"new_version"`
+	ExamplesUsed    int    `json:"examples_used"`
+	TreeDepth       int    `json:"tree_depth"`
 }
 
 type service struct {
 	repo         Repository
 	proposalRepo proposal.Repository
 	tree         *engine.DecisionTree
+	version      string
+	mu           sync.RWMutex
 	once         sync.Once
 }
 
@@ -31,14 +41,25 @@ func NewService(repo Repository, proposalRepo proposal.Repository) Service {
 	return &service{
 		repo:         repo,
 		proposalRepo: proposalRepo,
+		version:      engine.ModelVersion,
 	}
 }
 
 func (s *service) ensureTree() {
 	s.once.Do(func() {
-		data := engine.GenerateSeedData()
-		s.tree = engine.BuildTree(data, engine.RiskFeatures)
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		if s.tree == nil {
+			data := engine.GenerateSeedData()
+			s.tree = engine.BuildTree(data, engine.RiskFeatures)
+		}
 	})
+}
+
+func (s *service) getTree() *engine.DecisionTree {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.tree
 }
 
 func (s *service) Score(ctx context.Context, proposalID string) (*RiskResponse, error) {
@@ -63,8 +84,13 @@ func (s *service) Score(ctx context.Context, proposalID string) (*RiskResponse, 
 
 	s.ensureTree()
 
+	tree := s.getTree()
 	features := s.extractFeatures(ctx, prop)
-	label, confidence := s.tree.Classify(features)
+	label, confidence := tree.Classify(features)
+
+	s.mu.RLock()
+	version := s.version
+	s.mu.RUnlock()
 
 	span.SetAttributes(
 		attribute.String("risk.level", string(label)),
@@ -72,7 +98,7 @@ func (s *service) Score(ctx context.Context, proposalID string) (*RiskResponse, 
 	)
 
 	featuresJSON, _ := json.Marshal(features)
-	details := fmt.Sprintf(`{"tree_depth": %d}`, treeDepth(s.tree.Root))
+	details := fmt.Sprintf(`{"tree_depth": %d}`, treeDepth(tree.Root))
 
 	score := &RiskScore{
 		ProposalID:   proposalID,
@@ -80,7 +106,7 @@ func (s *service) Score(ctx context.Context, proposalID string) (*RiskResponse, 
 		Confidence:   float64(confidence),
 		Features:     string(featuresJSON),
 		Details:      details,
-		ModelVersion: "c4.5-v1",
+		ModelVersion: version,
 	}
 
 	if err := s.repo.Save(ctx, score); err != nil {
@@ -105,15 +131,55 @@ func (s *service) GetScore(ctx context.Context, proposalID string) (*RiskRespons
 	return toResponse(score, features), nil
 }
 
+func (s *service) Retrain(ctx context.Context) (*RetrainResponse, error) {
+	s.mu.RLock()
+	oldVersion := s.version
+	s.mu.RUnlock()
+
+	scores, err := s.repo.FindAll(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("query risk scores: %w", err)
+	}
+
+	if len(scores) < 5 {
+		return nil, fmt.Errorf("need at least 5 scored proposals to retrain, got %d", len(scores))
+	}
+
+	examples := make([]engine.Example, 0, len(scores))
+	for _, sc := range scores {
+		var features map[string]float64
+		if err := json.Unmarshal([]byte(sc.Features), &features); err != nil {
+			continue
+		}
+		examples = append(examples, engine.Example{
+			Features: features,
+			Label:    engine.Label(sc.RiskLevel),
+		})
+	}
+
+	newTree := engine.BuildTree(examples, engine.RiskFeatures)
+	newVersion := fmt.Sprintf("c4.5-v2-retrain-%d", len(scores))
+
+	s.mu.Lock()
+	s.tree = newTree
+	s.version = newVersion
+	s.mu.Unlock()
+
+	return &RetrainResponse{
+		PreviousVersion: oldVersion,
+		NewVersion:      newVersion,
+		ExamplesUsed:    len(examples),
+		TreeDepth:       treeDepth(newTree.Root),
+	}, nil
+}
+
 func (s *service) extractFeatures(ctx context.Context, prop *proposal.Proposal) map[string]float64 {
 	since := time.Now().AddDate(0, 0, -30)
 	freq, _ := s.proposalRepo.CountByOrganization(ctx, prop.Organization, since)
 
 	docCount, _ := s.proposalRepo.CountDocuments(ctx, prop.ID)
 	completeness := 1.0
-	if docCount > 0 {
-		completeness = 1.0
-	} else if docCount == 0 {
+	if docCount == 0 {
 		completeness = 0.0
 	}
 
