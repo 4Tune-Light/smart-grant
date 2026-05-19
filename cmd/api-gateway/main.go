@@ -3,6 +3,8 @@ package main
 import (
 	"context"
 	"net/http"
+	"net/http/httputil"
+	"net/url"
 	"os"
 
 	"github.com/go-chi/chi/v5"
@@ -39,7 +41,7 @@ func main() {
 	httpSrv := server.NewHTTPServer("gateway-http",
 		cfg.Gateway.HTTP.Host, cfg.Gateway.HTTP.Port, cfg.Gateway.HTTP.ReadTimeout)
 
-	registerRoutes(httpSrv.Router(), cfg.OTel.ServiceName+"-gateway")
+	registerRoutes(httpSrv.Router(), cfg)
 
 	mgr := server.NewManager(httpSrv)
 
@@ -49,17 +51,49 @@ func main() {
 	}
 }
 
-func registerRoutes(r chi.Router, svcName string) {
+func registerRoutes(r chi.Router, cfg *config.Config) {
 	r.Use(chimiddleware.RequestID)
 	r.Use(middleware.RequestID)
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recovery)
 	r.Use(middleware.CORS([]string{"*"}))
-	r.Use(middleware.OTelHTTP(svcName))
+	r.Use(middleware.SecurityHeaders)
+	r.Use(middleware.OTelHTTP(cfg.OTel.ServiceName + "-gateway"))
 
-	r.Get("/health", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`{"status":"ok"}`))
+	if cfg.Gateway.RateLimit.Enabled {
+		rl := middleware.NewRateLimiter(cfg.Gateway.RateLimit.Rate, cfg.Gateway.RateLimit.Burst)
+		r.Use(rl.Middleware)
+		log.Info().Int("rate", cfg.Gateway.RateLimit.Rate).Int("burst", cfg.Gateway.RateLimit.Burst).Msg("rate limiter enabled")
+	}
+
+	if cfg.Gateway.MaxBodySize > 0 {
+		r.Use(requestSizeLimit(cfg.Gateway.MaxBodySize))
+	}
+
+	r.Get("/health", healthHandler)
+
+	backendURL, err := url.Parse(cfg.Gateway.BackendURL)
+	if err != nil {
+		log.Fatal().Err(err).Msg("invalid backend URL")
+	}
+	proxy := httputil.NewSingleHostReverseProxy(backendURL)
+
+	r.HandleFunc("/*", func(w http.ResponseWriter, r *http.Request) {
+		proxy.ServeHTTP(w, r)
 	})
+}
+
+func healthHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte(`{"status":"ok"}`))
+}
+
+func requestSizeLimit(maxBytes int64) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			r.Body = http.MaxBytesReader(w, r.Body, maxBytes)
+			next.ServeHTTP(w, r)
+		})
+	}
 }

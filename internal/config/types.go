@@ -51,8 +51,16 @@ type ServerGRPC struct {
 }
 
 type Gateway struct {
-	HTTP      GatewayHTTP `mapstructure:"http"`
-	RateLimit int         `mapstructure:"rate_limit"`
+	HTTP          GatewayHTTP  `mapstructure:"http"`
+	RateLimit     RateLimit    `mapstructure:"rate_limit"`
+	BackendURL    string       `mapstructure:"backend_url"`
+	MaxBodySize   int64        `mapstructure:"max_body_size"`
+}
+
+type RateLimit struct {
+	Enabled bool `mapstructure:"enabled"`
+	Rate    int  `mapstructure:"rate"`
+	Burst   int  `mapstructure:"burst"`
 }
 
 type GatewayHTTP struct {

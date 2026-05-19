@@ -18,9 +18,14 @@ gateway:
   http:
     host: 0.0.0.0
     port: 8081
-    read_timeout: 10s
-    write_timeout: 10s
-  rate_limit: 100
+    read_timeout: 30s
+    write_timeout: 30s
+  rate_limit:
+    enabled: true
+    rate: 100
+    burst: 200
+  backend_url: http://backend:8080
+  max_body_size: 10485760
 
 database:
   postgres:
