@@ -63,7 +63,7 @@ func (s *service) Score(ctx context.Context, proposalID string) (*RiskResponse, 
 
 	s.ensureTree()
 
-	features := extractFeatures(prop)
+	features := s.extractFeatures(ctx, prop)
 	label, confidence := s.tree.Classify(features)
 
 	span.SetAttributes(
@@ -105,13 +105,21 @@ func (s *service) GetScore(ctx context.Context, proposalID string) (*RiskRespons
 	return toResponse(score, features), nil
 }
 
-func extractFeatures(prop *proposal.Proposal) map[string]float64 {
-	freq := 0.0
+func (s *service) extractFeatures(ctx context.Context, prop *proposal.Proposal) map[string]float64 {
+	since := time.Now().AddDate(0, 0, -30)
+	freq, _ := s.proposalRepo.CountByOrganization(ctx, prop.Organization, since)
+
+	docCount, _ := s.proposalRepo.CountDocuments(ctx, prop.ID)
 	completeness := 1.0
+	if docCount > 0 {
+		completeness = 1.0
+	} else if docCount == 0 {
+		completeness = 0.0
+	}
 
 	return map[string]float64{
 		"nominal_amount":         prop.NominalAmount,
-		"funding_frequency_30d":  freq,
+		"funding_frequency_30d":  float64(freq),
 		"document_completeness":  completeness,
 	}
 }

@@ -33,6 +33,9 @@ func (m *mockRepository) FindDocuments(ctx context.Context, proposalID string) (
 
 type mockStorage struct{}
 
+func (m *mockRepository) CountByOrganization(ctx context.Context, organization string, since time.Time) (int, error) { return 0, nil }
+func (m *mockRepository) CountDocuments(ctx context.Context, proposalID string) (int, error) { return 0, nil }
+
 func (m *mockStorage) Upload(ctx context.Context, objectPath string, reader io.Reader, size int64, contentType string) (string, error) {
 	return "http://minio/test/" + objectPath, nil
 }

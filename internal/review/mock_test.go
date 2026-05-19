@@ -56,6 +56,8 @@ func (m *mockProposalRepo) ListAllPage(ctx context.Context, status string, limit
 func (m *mockProposalRepo) CreateVersion(ctx context.Context, proposalID string, versionNumber int, snapshot string) error { return nil }
 func (m *mockProposalRepo) CreateDocument(ctx context.Context, d *proposal.Document) error { return nil }
 func (m *mockProposalRepo) FindDocuments(ctx context.Context, proposalID string) ([]proposal.Document, error) { return nil, nil }
+func (m *mockProposalRepo) CountByOrganization(ctx context.Context, organization string, since time.Time) (int, error) { return 0, nil }
+func (m *mockProposalRepo) CountDocuments(ctx context.Context, proposalID string) (int, error) { return 0, nil }
 
 type mockAudit struct{}
 

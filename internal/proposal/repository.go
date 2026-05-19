@@ -53,6 +53,8 @@ type Repository interface {
 	CreateVersion(ctx context.Context, proposalID string, versionNumber int, snapshot string) error
 	CreateDocument(ctx context.Context, d *Document) error
 	FindDocuments(ctx context.Context, proposalID string) ([]Document, error)
+	CountByOrganization(ctx context.Context, organization string, since time.Time) (int, error)
+	CountDocuments(ctx context.Context, proposalID string) (int, error)
 }
 
 type repository struct {
@@ -371,4 +373,17 @@ func (r *repository) FindDocuments(ctx context.Context, proposalID string) ([]Do
 	return docs, nil
 }
 
+func (r *repository) CountByOrganization(ctx context.Context, organization string, since time.Time) (int, error) {
+	query := `SELECT COUNT(*) FROM proposals WHERE organization = $1 AND created_at >= $2`
+	var count int
+	err := r.pool.QueryRow(ctx, query, organization, since).Scan(&count)
+	return count, err
+}
+
+func (r *repository) CountDocuments(ctx context.Context, proposalID string) (int, error) {
+	query := `SELECT COUNT(*) FROM proposal_documents WHERE proposal_id = $1`
+	var count int
+	err := r.pool.QueryRow(ctx, query, proposalID).Scan(&count)
+	return count, err
+}
 

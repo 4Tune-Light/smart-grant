@@ -41,3 +41,5 @@ func (m *mockProposalRepo) CreateVersion(ctx context.Context, proposalID string,
 func (m *mockProposalRepo) CreateDocument(ctx context.Context, d *proposal.Document) error { return nil }
 func (m *mockProposalRepo) FindDocuments(ctx context.Context, proposalID string) ([]proposal.Document, error) { return nil, nil }
 func (m *mockProposalRepo) Upload(ctx context.Context, objectPath string, reader io.Reader, size int64, contentType string) (string, error) { return "", nil }
+func (m *mockProposalRepo) CountByOrganization(ctx context.Context, organization string, since time.Time) (int, error) { return 0, nil }
+func (m *mockProposalRepo) CountDocuments(ctx context.Context, proposalID string) (int, error) { return 0, nil }
