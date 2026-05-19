@@ -5,6 +5,7 @@ import (
 	"strconv"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/rizky/smart-grant/pkg/cursor"
 	"github.com/rizky/smart-grant/pkg/response"
 )
 
@@ -17,13 +18,20 @@ func NewHandler(svc Service) *Handler {
 }
 
 func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
-	page, _ := strconv.Atoi(r.URL.Query().Get("page"))
-	if page < 1 {
-		page = 1
-	}
 	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
 	if limit < 1 || limit > 100 {
 		limit = 20
+	}
+
+	var c *cursor.Cursor
+	if cursorStr := r.URL.Query().Get("cursor"); cursorStr != "" {
+		decoded, err := cursor.Decode(cursorStr)
+		if err != nil {
+			response.Error(w, http.StatusBadRequest, "invalid_cursor", "invalid cursor")
+			return
+		}
+		cursorObj := decoded
+		c = &cursorObj
 	}
 
 	filter := AuditFilter{
@@ -31,19 +39,24 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 		EntityID:   chi.URLParam(r, "entity_id"),
 		ActorID:    r.URL.Query().Get("actor_id"),
 		Action:     r.URL.Query().Get("action"),
-		Page:       page,
 		Limit:      limit,
+		Cursor:     c,
 	}
 
 	if eid := chi.URLParam(r, "entity_id"); eid != "" {
 		filter.EntityID = eid
 	}
 
-	entries, total, err := h.svc.List(r.Context(), filter)
+	entries, nextCursor, err := h.svc.List(r.Context(), filter)
 	if err != nil {
 		response.Error(w, http.StatusInternalServerError, "internal_error", "failed to fetch audit logs")
 		return
 	}
 
-	response.Paginated(w, entries, page, limit, int64(total))
+	nextCursorStr := ""
+	if nextCursor != nil {
+		nextCursorStr = cursor.Encode(*nextCursor)
+	}
+
+	response.CursorPaginated(w, entries, nextCursorStr, nextCursor != nil)
 }

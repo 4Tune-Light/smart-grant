@@ -1,6 +1,10 @@
 package audit
 
-import "time"
+import (
+	"time"
+
+	"github.com/rizky/smart-grant/pkg/cursor"
+)
 
 type AuditResponse struct {
 	ID         string    `json:"id"`
@@ -27,6 +31,6 @@ type AuditFilter struct {
 	EntityID   string
 	ActorID    string
 	Action     string
-	Page       int
 	Limit      int
+	Cursor     *cursor.Cursor
 }

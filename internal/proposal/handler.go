@@ -7,6 +7,7 @@ import (
 	"strconv"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/rizky/smart-grant/pkg/cursor"
 	"github.com/rizky/smart-grant/pkg/response"
 	"github.com/rizky/smart-grant/pkg/validator"
 )
@@ -90,15 +91,29 @@ func (h *Handler) GetByID(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 	status := r.URL.Query().Get("status")
 	limit := parseIntParam(r.URL.Query().Get("limit"), 10)
-	page := parseIntParam(r.URL.Query().Get("page"), 1)
 
-	resp, total, err := h.svc.List(r.Context(), status, limit, page)
+	var c *cursor.Cursor
+	if cursorStr := r.URL.Query().Get("cursor"); cursorStr != "" {
+		decoded, err := cursor.Decode(cursorStr)
+		if err != nil {
+			response.Error(w, http.StatusBadRequest, "invalid_cursor", "invalid cursor")
+			return
+		}
+		c = &decoded
+	}
+
+	resp, nextCursor, err := h.svc.List(r.Context(), status, limit, c)
 	if err != nil {
 		handleError(w, err)
 		return
 	}
 
-	response.Paginated(w, resp, page, limit, int64(total))
+	nextCursorStr := ""
+	if nextCursor != nil {
+		nextCursorStr = cursor.Encode(*nextCursor)
+	}
+
+	response.CursorPaginated(w, resp, nextCursorStr, nextCursor != nil)
 }
 
 func (h *Handler) UploadDocument(w http.ResponseWriter, r *http.Request) {

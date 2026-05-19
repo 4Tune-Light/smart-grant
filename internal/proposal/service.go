@@ -12,6 +12,7 @@ import (
 	"github.com/rizky/smart-grant/internal/audit"
 	"github.com/rizky/smart-grant/internal/middleware"
 	"github.com/rizky/smart-grant/internal/notification"
+	"github.com/rizky/smart-grant/pkg/cursor"
 	"github.com/rizky/smart-grant/pkg/storage"
 )
 
@@ -20,7 +21,7 @@ type Service interface {
 	Update(ctx context.Context, proposalID string, req UpdateProposalRequest) (*ProposalResponse, error)
 	Submit(ctx context.Context, proposalID string) (*ProposalResponse, error)
 	GetByID(ctx context.Context, proposalID string) (*ProposalResponse, error)
-	List(ctx context.Context, status string, limit int, page int) ([]ProposalResponse, int, error)
+	List(ctx context.Context, status string, limit int, cursor *cursor.Cursor) ([]ProposalResponse, *cursor.Cursor, error)
 	UploadDocument(ctx context.Context, proposalID string, file io.Reader, header *multipart.FileHeader) (*DocumentResponse, error)
 	GetDocuments(ctx context.Context, proposalID string) ([]DocumentResponse, error)
 }
@@ -175,22 +176,21 @@ func (s *service) GetByID(ctx context.Context, proposalID string) (*ProposalResp
 	return toProposalResponse(proposal), nil
 }
 
-func (s *service) List(ctx context.Context, status string, limit int, page int) ([]ProposalResponse, int, error) {
+func (s *service) List(ctx context.Context, status string, limit int, c *cursor.Cursor) ([]ProposalResponse, *cursor.Cursor, error) {
 	userID, _ := ctx.Value(middleware.AuthUserIDKey).(string)
 	role, _ := ctx.Value(middleware.AuthRoleKey).(string)
-	_ = userID
 
 	var proposals []Proposal
-	var total int
+	var nextCursor *cursor.Cursor
 	var err error
 
 	if role == "applicant" {
-		proposals, total, err = s.repo.ListByApplicant(ctx, userID, status, limit, page)
+		proposals, nextCursor, err = s.repo.ListByApplicant(ctx, userID, status, limit, c)
 	} else {
-		proposals, total, err = s.repo.ListAll(ctx, status, limit, page)
+		proposals, nextCursor, err = s.repo.ListAll(ctx, status, limit, c)
 	}
 	if err != nil {
-		return nil, 0, err
+		return nil, nil, err
 	}
 
 	responses := make([]ProposalResponse, len(proposals))
@@ -198,7 +198,7 @@ func (s *service) List(ctx context.Context, status string, limit int, page int) 
 		responses[i] = *toProposalResponse(&p)
 	}
 
-	return responses, total, nil
+	return responses, nextCursor, nil
 }
 
 func (s *service) UploadDocument(ctx context.Context, proposalID string, file io.Reader, header *multipart.FileHeader) (*DocumentResponse, error) {

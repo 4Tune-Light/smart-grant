@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strconv"
 
+	"github.com/rizky/smart-grant/pkg/cursor"
 	"github.com/rizky/smart-grant/pkg/response"
 )
 
@@ -18,22 +19,33 @@ func NewHandler(svc Service) *Handler {
 }
 
 func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
-	page, _ := strconv.Atoi(r.URL.Query().Get("page"))
-	if page < 1 {
-		page = 1
-	}
 	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
 	if limit < 1 || limit > 100 {
 		limit = 20
 	}
 
-	notifications, total, err := h.svc.List(r.Context(), limit, page)
+	var c *cursor.Cursor
+	if cursorStr := r.URL.Query().Get("cursor"); cursorStr != "" {
+		decoded, err := cursor.Decode(cursorStr)
+		if err != nil {
+			response.Error(w, http.StatusBadRequest, "invalid_cursor", "invalid cursor")
+			return
+		}
+		c = &decoded
+	}
+
+	notifications, nextCursor, err := h.svc.List(r.Context(), limit, c)
 	if err != nil {
 		response.Error(w, http.StatusInternalServerError, "internal_error", "failed to list notifications")
 		return
 	}
 
-	response.Paginated(w, notifications, page, limit, int64(total))
+	nextCursorStr := ""
+	if nextCursor != nil {
+		nextCursorStr = cursor.Encode(*nextCursor)
+	}
+
+	response.CursorPaginated(w, notifications, nextCursorStr, nextCursor != nil)
 }
 
 func (h *Handler) MarkRead(w http.ResponseWriter, r *http.Request) {

@@ -3,15 +3,13 @@ package response
 import (
 	"encoding/json"
 	"net/http"
-
-	"github.com/rs/zerolog/log"
 )
 
 type API struct {
 	Success bool        `json:"success"`
 	Data    interface{} `json:"data,omitempty"`
 	Error   *ErrorInfo  `json:"error,omitempty"`
-	Meta    *Meta       `json:"meta,omitempty"`
+	Meta    interface{} `json:"meta,omitempty"`
 }
 
 type ErrorInfo struct {
@@ -19,35 +17,34 @@ type ErrorInfo struct {
 	Message string `json:"message"`
 }
 
-type Meta struct {
-	Page       int   `json:"page,omitempty"`
-	PerPage    int   `json:"per_page,omitempty"`
-	Total      int64 `json:"total,omitempty"`
-	TotalPages int   `json:"total_pages,omitempty"`
+type PageMeta struct {
+	Page       int   `json:"page"`
+	PerPage    int   `json:"per_page"`
+	Total      int64 `json:"total"`
+	TotalPages int   `json:"total_pages"`
+}
+
+type CursorMeta struct {
+	NextCursor string `json:"next_cursor"`
+	HasMore    bool   `json:"has_more"`
 }
 
 func JSON(w http.ResponseWriter, status int, data interface{}) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-
 	if data == nil {
 		return
 	}
-
 	resp := API{
 		Success: status >= 200 && status < 300,
 		Data:    data,
 	}
-
-	if err := json.NewEncoder(w).Encode(resp); err != nil {
-		log.Error().Err(err).Msg("failed to encode response")
-	}
+	json.NewEncoder(w).Encode(resp)
 }
 
 func Error(w http.ResponseWriter, status int, code string, message string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-
 	resp := API{
 		Success: false,
 		Error: &ErrorInfo{
@@ -55,10 +52,7 @@ func Error(w http.ResponseWriter, status int, code string, message string) {
 			Message: message,
 		},
 	}
-
-	if err := json.NewEncoder(w).Encode(resp); err != nil {
-		log.Error().Err(err).Msg("failed to encode error response")
-	}
+	json.NewEncoder(w).Encode(resp)
 }
 
 func Paginated(w http.ResponseWriter, data interface{}, page int, perPage int, total int64) {
@@ -69,19 +63,29 @@ func Paginated(w http.ResponseWriter, data interface{}, page int, perPage int, t
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-
 	resp := API{
 		Success: true,
 		Data:    data,
-		Meta: &Meta{
+		Meta: &PageMeta{
 			Page:       page,
 			PerPage:    perPage,
 			Total:      total,
 			TotalPages: totalPages,
 		},
 	}
+	json.NewEncoder(w).Encode(resp)
+}
 
-	if err := json.NewEncoder(w).Encode(resp); err != nil {
-		log.Error().Err(err).Msg("failed to encode paginated response")
+func CursorPaginated(w http.ResponseWriter, data interface{}, nextCursor string, hasMore bool) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	resp := API{
+		Success: true,
+		Data:    data,
+		Meta: &CursorMeta{
+			NextCursor: nextCursor,
+			HasMore:    hasMore,
+		},
 	}
+	json.NewEncoder(w).Encode(resp)
 }

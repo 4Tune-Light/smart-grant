@@ -3,11 +3,13 @@ package audit
 import (
 	"context"
 	"encoding/json"
+
+	"github.com/rizky/smart-grant/pkg/cursor"
 )
 
 type Service interface {
 	Log(ctx context.Context, entry LogEntry) error
-	List(ctx context.Context, filter AuditFilter) ([]AuditResponse, int, error)
+	List(ctx context.Context, filter AuditFilter) ([]AuditResponse, *cursor.Cursor, error)
 }
 
 type service struct {
@@ -40,17 +42,14 @@ func (s *service) Log(ctx context.Context, entry LogEntry) error {
 	return s.repo.Insert(ctx, a)
 }
 
-func (s *service) List(ctx context.Context, filter AuditFilter) ([]AuditResponse, int, error) {
-	if filter.Page < 1 {
-		filter.Page = 1
-	}
+func (s *service) List(ctx context.Context, filter AuditFilter) ([]AuditResponse, *cursor.Cursor, error) {
 	if filter.Limit < 1 || filter.Limit > 100 {
 		filter.Limit = 20
 	}
 
-	entries, total, err := s.repo.List(ctx, filter)
+	entries, nextCursor, err := s.repo.List(ctx, filter)
 	if err != nil {
-		return nil, 0, err
+		return nil, nil, err
 	}
 
 	responses := make([]AuditResponse, len(entries))
@@ -67,7 +66,7 @@ func (s *service) List(ctx context.Context, filter AuditFilter) ([]AuditResponse
 		}
 	}
 
-	return responses, total, nil
+	return responses, nextCursor, nil
 }
 
 func formatJSON(s string) string {

@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/rizky/smart-grant/pkg/cursor"
 )
 
 type Audit struct {
@@ -21,7 +22,7 @@ type Audit struct {
 
 type Repository interface {
 	Insert(ctx context.Context, entry *Audit) error
-	List(ctx context.Context, filter AuditFilter) ([]Audit, int, error)
+	List(ctx context.Context, filter AuditFilter) ([]Audit, *cursor.Cursor, error)
 }
 
 type repository struct {
@@ -44,7 +45,9 @@ func (r *repository) Insert(ctx context.Context, entry *Audit) error {
 	).Scan(&entry.ID, &entry.CreatedAt)
 }
 
-func (r *repository) List(ctx context.Context, filter AuditFilter) ([]Audit, int, error) {
+func (r *repository) List(ctx context.Context, filter AuditFilter) ([]Audit, *cursor.Cursor, error) {
+	query := "SELECT id, entity_type, entity_id, action, actor_id, COALESCE(old_values, '{}'::jsonb), COALESCE(new_values, '{}'::jsonb), created_at FROM audit_logs"
+
 	args := []interface{}{}
 	where := ""
 	argIdx := 1
@@ -82,22 +85,24 @@ func (r *repository) List(ctx context.Context, filter AuditFilter) ([]Audit, int
 		argIdx++
 	}
 
-	countQuery := "SELECT COUNT(*) FROM audit_logs" + where
-	var total int
-	if err := r.pool.QueryRow(ctx, countQuery, args...).Scan(&total); err != nil {
-		return nil, 0, err
+	query += where
+
+	if filter.Cursor != nil {
+		prefix := " AND"
+		if where == "" {
+			prefix = " WHERE"
+		}
+		query += fmt.Sprintf("%s (created_at, id) < ($%d::timestamptz, $%d::uuid)", prefix, argIdx, argIdx+1)
+		args = append(args, filter.Cursor.LastCreatedAt, filter.Cursor.LastID)
+		argIdx += 2
 	}
 
-	offset := (filter.Page - 1) * filter.Limit
-	query := fmt.Sprintf(
-		"SELECT id, entity_type, entity_id, action, actor_id, COALESCE(old_values, '{}'::jsonb), COALESCE(new_values, '{}'::jsonb), created_at FROM audit_logs%s ORDER BY created_at DESC LIMIT $%d OFFSET $%d",
-		where, argIdx, argIdx+1,
-	)
-	args = append(args, filter.Limit, offset)
+	query += fmt.Sprintf(" ORDER BY created_at DESC, id DESC LIMIT $%d", argIdx)
+	args = append(args, filter.Limit+1)
 
 	rows, err := r.pool.Query(ctx, query, args...)
 	if err != nil {
-		return nil, 0, err
+		return nil, nil, err
 	}
 	defer rows.Close()
 
@@ -105,12 +110,20 @@ func (r *repository) List(ctx context.Context, filter AuditFilter) ([]Audit, int
 	for rows.Next() {
 		var e Audit
 		if err := rows.Scan(&e.ID, &e.EntityType, &e.EntityID, &e.Action, &e.ActorID, &e.OldValues, &e.NewValues, &e.CreatedAt); err != nil {
-			return nil, 0, err
+			return nil, nil, err
 		}
 		entries = append(entries, e)
 	}
 
-	return entries, total, nil
+	var nextCursor *cursor.Cursor
+	hasMore := len(entries) > filter.Limit
+	if hasMore {
+		entries = entries[:filter.Limit]
+		last := entries[len(entries)-1]
+		nextCursor = &cursor.Cursor{LastID: last.ID, LastCreatedAt: last.CreatedAt}
+	}
+
+	return entries, nextCursor, nil
 }
 
 func nullIfEmpty(s string) interface{} {

@@ -8,11 +8,12 @@ import (
 
 	"github.com/redis/go-redis/v9"
 	"github.com/rizky/smart-grant/internal/middleware"
+	"github.com/rizky/smart-grant/pkg/cursor"
 )
 
 type Service interface {
 	Send(ctx context.Context, userID string, notifType string, title string, body string) error
-	List(ctx context.Context, limit int, page int) ([]NotificationResponse, int, error)
+	List(ctx context.Context, limit int, c *cursor.Cursor) ([]NotificationResponse, *cursor.Cursor, error)
 	MarkRead(ctx context.Context, notificationID string) error
 	Subscribe(ctx context.Context) (<-chan NotificationEvent, error)
 }
@@ -66,13 +67,12 @@ func (s *service) Send(ctx context.Context, userID string, notifType string, tit
 	return nil
 }
 
-func (s *service) List(ctx context.Context, limit int, page int) ([]NotificationResponse, int, error) {
+func (s *service) List(ctx context.Context, limit int, c *cursor.Cursor) ([]NotificationResponse, *cursor.Cursor, error) {
 	userID, _ := ctx.Value(middleware.AuthUserIDKey).(string)
-	offset := (page - 1) * limit
 
-	notifications, total, err := s.repo.FindByUserID(ctx, userID, limit, offset)
+	notifications, nextCursor, err := s.repo.FindByUserID(ctx, userID, limit, c)
 	if err != nil {
-		return nil, 0, err
+		return nil, nil, err
 	}
 
 	responses := make([]NotificationResponse, len(notifications))
@@ -87,7 +87,7 @@ func (s *service) List(ctx context.Context, limit int, page int) ([]Notification
 		}
 	}
 
-	return responses, total, nil
+	return responses, nextCursor, nil
 }
 
 func (s *service) MarkRead(ctx context.Context, notificationID string) error {

@@ -2,10 +2,12 @@ package proposal
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/rizky/smart-grant/pkg/cursor"
 )
 
 type Proposal struct {
@@ -43,8 +45,8 @@ type Repository interface {
 	Create(ctx context.Context, p *Proposal) error
 	Update(ctx context.Context, p *Proposal) error
 	FindByID(ctx context.Context, id string) (*Proposal, error)
-	ListByApplicant(ctx context.Context, applicantID string, status string, limit int, offset int) ([]Proposal, int, error)
-	ListAll(ctx context.Context, status string, limit int, offset int) ([]Proposal, int, error)
+	ListByApplicant(ctx context.Context, applicantID string, status string, limit int, c *cursor.Cursor) ([]Proposal, *cursor.Cursor, error)
+	ListAll(ctx context.Context, status string, limit int, c *cursor.Cursor) ([]Proposal, *cursor.Cursor, error)
 	CreateVersion(ctx context.Context, proposalID string, versionNumber int, snapshot string) error
 	CreateDocument(ctx context.Context, d *Document) error
 	FindDocuments(ctx context.Context, proposalID string) ([]Document, error)
@@ -111,70 +113,33 @@ func (r *repository) FindByID(ctx context.Context, id string) (*Proposal, error)
 	return p, nil
 }
 
-func (r *repository) ListByApplicant(ctx context.Context, applicantID string, status string, limit int, page int) ([]Proposal, int, error) {
-	offset := (page - 1) * limit
-	countQuery := `SELECT COUNT(*) FROM proposals WHERE applicant_id = $1`
-	args := []interface{}{applicantID}
-	argIdx := 2
-
-	if status != "" {
-		countQuery += ` AND status = $2`
-		args = append(args, status)
-		argIdx++
-	}
-
-	var total int
-	if err := r.pool.QueryRow(ctx, countQuery, args...).Scan(&total); err != nil {
-		return nil, 0, err
-	}
-
+func (r *repository) ListByApplicant(ctx context.Context, applicantID string, status string, limit int, c *cursor.Cursor) ([]Proposal, *cursor.Cursor, error) {
 	query := `
 		SELECT id, applicant_id, title, description, nominal_amount,
 		       organization, status, version, created_at, updated_at
 		FROM proposals WHERE applicant_id = $1`
 
-	queryArgs := []interface{}{applicantID}
+	args := []interface{}{applicantID}
+	argIdx := 2
+
 	if status != "" {
 		query += ` AND status = $2`
-		queryArgs = append(queryArgs, status)
-	}
-
-	query += ` ORDER BY created_at DESC LIMIT $` + itoa(argIdx) + ` OFFSET $` + itoa(argIdx+1)
-	queryArgs = append(queryArgs, limit, offset)
-
-	return r.scanProposals(ctx, query, queryArgs, total)
-}
-
-func (r *repository) ListAll(ctx context.Context, status string, limit int, page int) ([]Proposal, int, error) {
-	offset := (page - 1) * limit
-	args := []interface{}{}
-	countQuery := `SELECT COUNT(*) FROM proposals`
-	query := `
-		SELECT id, applicant_id, title, description, nominal_amount,
-		       organization, status, version, created_at, updated_at
-		FROM proposals`
-
-	if status != "" {
-		countQuery += ` WHERE status = $1`
-		query += ` WHERE status = $1`
 		args = append(args, status)
+		argIdx++
 	}
 
-	var total int
-	if err := r.pool.QueryRow(ctx, countQuery, args...).Scan(&total); err != nil {
-		return nil, 0, err
+	if c != nil {
+		query += fmt.Sprintf(` AND (created_at, id) < ($%d::timestamptz, $%d::uuid)`, argIdx, argIdx+1)
+		args = append(args, c.LastCreatedAt, c.LastID)
+		argIdx += 2
 	}
 
-	query += ` ORDER BY created_at DESC LIMIT $` + itoa(len(args)+1) + ` OFFSET $` + itoa(len(args)+2)
-	args = append(args, limit, offset)
+	query += fmt.Sprintf(` ORDER BY created_at DESC, id DESC LIMIT $%d`, argIdx)
+	args = append(args, limit+1)
 
-	return r.scanProposals(ctx, query, args, total)
-}
-
-func (r *repository) scanProposals(ctx context.Context, query string, args []interface{}, total int) ([]Proposal, int, error) {
 	rows, err := r.pool.Query(ctx, query, args...)
 	if err != nil {
-		return nil, 0, err
+		return nil, nil, err
 	}
 	defer rows.Close()
 
@@ -185,12 +150,77 @@ func (r *repository) scanProposals(ctx context.Context, query string, args []int
 			&p.ID, &p.ApplicantID, &p.Title, &p.Description, &p.NominalAmount,
 			&p.Organization, &p.Status, &p.Version, &p.CreatedAt, &p.UpdatedAt,
 		); err != nil {
-			return nil, 0, err
+			return nil, nil, err
 		}
 		proposals = append(proposals, p)
 	}
 
-	return proposals, total, nil
+	var nextCursor *cursor.Cursor
+	hasMore := len(proposals) > limit
+	if hasMore {
+		proposals = proposals[:limit]
+		last := proposals[len(proposals)-1]
+		nextCursor = &cursor.Cursor{LastID: last.ID, LastCreatedAt: last.CreatedAt}
+	}
+
+	return proposals, nextCursor, nil
+}
+
+func (r *repository) ListAll(ctx context.Context, status string, limit int, c *cursor.Cursor) ([]Proposal, *cursor.Cursor, error) {
+	query := `
+		SELECT id, applicant_id, title, description, nominal_amount,
+		       organization, status, version, created_at, updated_at
+		FROM proposals`
+
+	args := []interface{}{}
+	argIdx := 1
+
+	if status != "" {
+		query += ` WHERE status = $1`
+		args = append(args, status)
+		argIdx++
+	}
+
+	if c != nil {
+		prefix := " AND"
+		if status == "" {
+			prefix = " WHERE"
+		}
+		query += fmt.Sprintf(`%s (created_at, id) < ($%d::timestamptz, $%d::uuid)`, prefix, argIdx, argIdx+1)
+		args = append(args, c.LastCreatedAt, c.LastID)
+		argIdx += 2
+	}
+
+	query += fmt.Sprintf(` ORDER BY created_at DESC, id DESC LIMIT $%d`, argIdx)
+	args = append(args, limit+1)
+
+	rows, err := r.pool.Query(ctx, query, args...)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer rows.Close()
+
+	var proposals []Proposal
+	for rows.Next() {
+		var p Proposal
+		if err := rows.Scan(
+			&p.ID, &p.ApplicantID, &p.Title, &p.Description, &p.NominalAmount,
+			&p.Organization, &p.Status, &p.Version, &p.CreatedAt, &p.UpdatedAt,
+		); err != nil {
+			return nil, nil, err
+		}
+		proposals = append(proposals, p)
+	}
+
+	var nextCursor *cursor.Cursor
+	hasMore := len(proposals) > limit
+	if hasMore {
+		proposals = proposals[:limit]
+		last := proposals[len(proposals)-1]
+		nextCursor = &cursor.Cursor{LastID: last.ID, LastCreatedAt: last.CreatedAt}
+	}
+
+	return proposals, nextCursor, nil
 }
 
 func (r *repository) CreateVersion(ctx context.Context, proposalID string, versionNumber int, snapshot string) error {
@@ -236,14 +266,4 @@ func (r *repository) FindDocuments(ctx context.Context, proposalID string) ([]Do
 	return docs, nil
 }
 
-func itoa(n int) string {
-	if n == 0 {
-		return "0"
-	}
-	s := ""
-	for n > 0 {
-		s = string(rune('0'+n%10)) + s
-		n /= 10
-	}
-	return s
-}
+

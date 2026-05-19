@@ -2,10 +2,12 @@ package notification
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/rizky/smart-grant/pkg/cursor"
 )
 
 type Notification struct {
@@ -20,7 +22,7 @@ type Notification struct {
 
 type Repository interface {
 	Insert(ctx context.Context, n *Notification) error
-	FindByUserID(ctx context.Context, userID string, limit int, offset int) ([]Notification, int, error)
+	FindByUserID(ctx context.Context, userID string, limit int, c *cursor.Cursor) ([]Notification, *cursor.Cursor, error)
 	MarkRead(ctx context.Context, id string, userID string) error
 }
 
@@ -40,21 +42,26 @@ func (r *repository) Insert(ctx context.Context, n *Notification) error {
 	return r.pool.QueryRow(ctx, query, n.UserID, n.Type, n.Title, n.Body).Scan(&n.ID, &n.CreatedAt)
 }
 
-func (r *repository) FindByUserID(ctx context.Context, userID string, limit int, offset int) ([]Notification, int, error) {
-	countQuery := `SELECT COUNT(*) FROM notifications WHERE user_id = $1`
-	var total int
-	if err := r.pool.QueryRow(ctx, countQuery, userID).Scan(&total); err != nil {
-		return nil, 0, err
-	}
-
+func (r *repository) FindByUserID(ctx context.Context, userID string, limit int, c *cursor.Cursor) ([]Notification, *cursor.Cursor, error) {
 	query := `
 		SELECT id, user_id, type, title, body, is_read, created_at
-		FROM notifications WHERE user_id = $1
-		ORDER BY created_at DESC LIMIT $2 OFFSET $3`
+		FROM notifications WHERE user_id = $1`
 
-	rows, err := r.pool.Query(ctx, query, userID, limit, offset)
+	args := []interface{}{userID}
+	argIdx := 2
+
+	if c != nil {
+		query += fmt.Sprintf(` AND (created_at, id) < ($%d::timestamptz, $%d::uuid)`, argIdx, argIdx+1)
+		args = append(args, c.LastCreatedAt, c.LastID)
+		argIdx += 2
+	}
+
+	query += fmt.Sprintf(` ORDER BY created_at DESC, id DESC LIMIT $%d`, argIdx)
+	args = append(args, limit+1)
+
+	rows, err := r.pool.Query(ctx, query, args...)
 	if err != nil {
-		return nil, 0, err
+		return nil, nil, err
 	}
 	defer rows.Close()
 
@@ -62,12 +69,20 @@ func (r *repository) FindByUserID(ctx context.Context, userID string, limit int,
 	for rows.Next() {
 		var n Notification
 		if err := rows.Scan(&n.ID, &n.UserID, &n.Type, &n.Title, &n.Body, &n.IsRead, &n.CreatedAt); err != nil {
-			return nil, 0, err
+			return nil, nil, err
 		}
 		notifications = append(notifications, n)
 	}
 
-	return notifications, total, nil
+	var nextCursor *cursor.Cursor
+	hasMore := len(notifications) > limit
+	if hasMore {
+		notifications = notifications[:limit]
+		last := notifications[len(notifications)-1]
+		nextCursor = &cursor.Cursor{LastID: last.ID, LastCreatedAt: last.CreatedAt}
+	}
+
+	return notifications, nextCursor, nil
 }
 
 func (r *repository) MarkRead(ctx context.Context, id string, userID string) error {
