@@ -36,12 +36,12 @@ func (s *service) Create(ctx context.Context, proposalID string, req CreateRevie
 		return nil, ErrNotReviewer
 	}
 
-	proposal, err := s.proposalRepo.FindByID(ctx, proposalID)
+	prop, err := s.proposalRepo.FindByID(ctx, proposalID)
 	if err != nil {
 		return nil, err
 	}
 
-	if proposal.Status != "submitted" {
+	if prop.Status != "submitted" {
 		return nil, ErrProposalNotReady
 	}
 
@@ -78,9 +78,9 @@ func (s *service) Create(ctx context.Context, proposalID string, req CreateRevie
 		NewValues:  fmt.Sprintf(`{"proposal_id":"%s","score":%d,"status":"pending"}`, proposalID, req.Score),
 	})
 
-	s.notif.Send(ctx, proposal.ApplicantID, "review_received",
+	s.notif.Send(ctx, prop.ApplicantID, "review_received",
 		"Proposal Reviewed",
-		fmt.Sprintf("Your proposal '%s' has been reviewed (score: %d/100)", proposal.Title, req.Score),
+		fmt.Sprintf("Your proposal '%s' has been reviewed (score: %d/100)", prop.Title, req.Score),
 	)
 
 	return toResponse(rev), nil
@@ -118,12 +118,12 @@ func (s *service) Approve(ctx context.Context, proposalID string) (*ReviewRespon
 		return nil, ErrNotAdmin
 	}
 
-	proposal, err := s.proposalRepo.FindByID(ctx, proposalID)
+	prop, err := s.proposalRepo.FindByID(ctx, proposalID)
 	if err != nil {
 		return nil, err
 	}
 
-	if proposal.Status == "approved" || proposal.Status == "rejected" {
+	if prop.Status == "approved" || prop.Status == "rejected" {
 		return nil, ErrProposalAlreadyDecided
 	}
 
@@ -139,9 +139,9 @@ func (s *service) Approve(ctx context.Context, proposalID string) (*ReviewRespon
 		NewValues:  fmt.Sprintf(`{"proposal_id":"%s","status":"approved"}`, proposalID),
 	})
 
-	s.notif.Send(ctx, proposal.ApplicantID, "proposal_approved",
+	s.notif.Send(ctx, prop.ApplicantID, "proposal_approved",
 		"Proposal Approved",
-		fmt.Sprintf("Your proposal '%s' has been approved.", proposal.Title),
+		fmt.Sprintf("Your proposal '%s' has been approved.", prop.Title),
 	)
 
 	return &ReviewResponse{
@@ -157,12 +157,12 @@ func (s *service) Reject(ctx context.Context, proposalID string) (*ReviewRespons
 		return nil, ErrNotAdmin
 	}
 
-	proposal, err := s.proposalRepo.FindByID(ctx, proposalID)
+	prop, err := s.proposalRepo.FindByID(ctx, proposalID)
 	if err != nil {
 		return nil, err
 	}
 
-	if proposal.Status == "approved" || proposal.Status == "rejected" {
+	if prop.Status == "approved" || prop.Status == "rejected" {
 		return nil, ErrProposalAlreadyDecided
 	}
 
@@ -178,9 +178,9 @@ func (s *service) Reject(ctx context.Context, proposalID string) (*ReviewRespons
 		NewValues:  fmt.Sprintf(`{"proposal_id":"%s","status":"rejected"}`, proposalID),
 	})
 
-	s.notif.Send(ctx, proposal.ApplicantID, "proposal_rejected",
+	s.notif.Send(ctx, prop.ApplicantID, "proposal_rejected",
 		"Proposal Rejected",
-		fmt.Sprintf("Your proposal '%s' has been rejected.", proposal.Title),
+		fmt.Sprintf("Your proposal '%s' has been rejected.", prop.Title),
 	)
 
 	return &ReviewResponse{

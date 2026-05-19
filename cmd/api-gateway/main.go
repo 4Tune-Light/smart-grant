@@ -19,7 +19,7 @@ import (
 func main() {
 	log.Logger = zerolog.New(os.Stdout).With().Timestamp().Logger()
 
-	cfg := loadConfig()
+	cfg := config.MustLoad("")
 
 	ctx := context.Background()
 
@@ -31,19 +31,13 @@ func main() {
 		TraceRatio:  cfg.OTel.TraceRatio,
 	})
 	if err != nil {
-		log.Fatal().Err(err).Msg("failed to initialize telemetry")
+		log.Warn().Err(err).Msg("telemetry not available")
+	} else {
+		defer func() { _ = tp.Shutdown(ctx); _ = mp.Shutdown(ctx) }()
 	}
-	defer func() {
-		_ = tp.Shutdown(ctx)
-		_ = mp.Shutdown(ctx)
-	}()
 
-	httpSrv := server.NewHTTPServer(
-		"gateway-http",
-		cfg.Gateway.HTTP.Host,
-		cfg.Gateway.HTTP.Port,
-		cfg.Gateway.HTTP.ReadTimeout,
-	)
+	httpSrv := server.NewHTTPServer("gateway-http",
+		cfg.Gateway.HTTP.Host, cfg.Gateway.HTTP.Port, cfg.Gateway.HTTP.ReadTimeout)
 
 	registerRoutes(httpSrv.Router())
 
@@ -53,15 +47,6 @@ func main() {
 	if err := mgr.Run(ctx); err != nil {
 		log.Fatal().Err(err).Msg("server stopped with error")
 	}
-}
-
-func loadConfig() *config.Config {
-	cfgPath := os.Getenv("CONFIG_PATH")
-	cfg, err := config.Load(cfgPath)
-	if err != nil {
-		log.Fatal().Err(err).Msg("failed to load config")
-	}
-	return cfg
 }
 
 func registerRoutes(r chi.Router) {

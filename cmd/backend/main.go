@@ -2,28 +2,13 @@ package main
 
 import (
 	"context"
-	"fmt"
-	"net/http"
 	"os"
 
-	"github.com/go-chi/chi/v5"
-	chimiddleware "github.com/go-chi/chi/v5/middleware"
-	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/redis/go-redis/v9"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
-	"google.golang.org/grpc"
 
-	"github.com/rizky/smart-grant/internal/audit"
-	"github.com/rizky/smart-grant/internal/auth"
 	"github.com/rizky/smart-grant/internal/config"
-	"github.com/rizky/smart-grant/internal/middleware"
-	"github.com/rizky/smart-grant/internal/notification"
-	"github.com/rizky/smart-grant/internal/proposal"
-	"github.com/rizky/smart-grant/internal/review"
-	"github.com/rizky/smart-grant/internal/risk"
 	"github.com/rizky/smart-grant/internal/server"
-	"github.com/rizky/smart-grant/pkg/storage"
 	"github.com/rizky/smart-grant/internal/telemetry"
 	"github.com/rizky/smart-grant/pkg/database"
 )
@@ -31,7 +16,7 @@ import (
 func main() {
 	log.Logger = zerolog.New(os.Stdout).With().Timestamp().Logger()
 
-	cfg := loadConfig()
+	cfg := config.MustLoad("")
 
 	ctx := context.Background()
 
@@ -43,52 +28,32 @@ func main() {
 		TraceRatio:  cfg.OTel.TraceRatio,
 	})
 	if err != nil {
-		log.Fatal().Err(err).Msg("failed to initialize telemetry")
+		log.Warn().Err(err).Msg("telemetry not available")
+	} else {
+		defer func() { _ = tp.Shutdown(ctx); _ = mp.Shutdown(ctx) }()
 	}
-	defer func() {
-		_ = tp.Shutdown(ctx)
-		_ = mp.Shutdown(ctx)
-	}()
 
-	pgCfg := buildPostgresDSN(cfg)
-	pgPool, err := database.NewPostgresPool(ctx, pgCfg)
+	pool, err := database.NewPostgresPool(ctx, cfg.PostgresConfig())
 	if err != nil {
 		log.Fatal().Err(err).Msg("failed to connect to PostgreSQL")
 	}
-	defer pgPool.Close()
+	defer pool.Close()
 
-	redisCfg := database.RedisConfig{
-		Addr:         fmt.Sprintf("%s:%d", cfg.Redis.Host, cfg.Redis.Port),
-		Password:     cfg.Redis.Password,
-		DB:           cfg.Redis.DB,
-		PoolSize:     cfg.Redis.PoolSize,
-		MinIdleConns: cfg.Redis.MinIdleConns,
-	}
-	redisClient, err := database.NewRedisClient(ctx, redisCfg)
+	rdb, err := database.NewRedisClient(ctx, cfg.RedisConfig())
 	if err != nil {
-		log.Warn().Err(err).Msg("Redis not available, continuing without it")
-		redisClient = nil
+		log.Warn().Err(err).Msg("Redis not available")
+		rdb = nil
 	}
 
-	httpSrv := server.NewHTTPServer(
-		"backend-http",
-		cfg.Server.HTTP.Host,
-		cfg.Server.HTTP.Port,
-		cfg.Server.HTTP.ReadTimeout,
-	)
+	httpSrv := server.NewHTTPServer("backend-http",
+		cfg.Server.HTTP.Host, cfg.Server.HTTP.Port, cfg.Server.HTTP.ReadTimeout)
 
-	registerRoutes(httpSrv.Router(), cfg, pgPool, redisClient)
-
-	grpcSrv, err := server.NewGRPCServer(
-		"backend-grpc",
-		cfg.Server.GRPC.Host,
-		cfg.Server.GRPC.Port,
-	)
+	grpcSrv, err := server.NewGRPCServer("backend-grpc", cfg.Server.GRPC.Host, cfg.Server.GRPC.Port)
 	if err != nil {
 		log.Fatal().Err(err).Msg("failed to create gRPC server")
 	}
 
-	registerGRPCServices(grpcSrv.Server())
+	server.RegisterRoutes(httpSrv.Router(), cfg, pool, rdb)
 
 	mgr := server.NewManager(httpSrv, grpcSrv)
 
@@ -96,158 +61,4 @@ func main() {
 	if err := mgr.Run(ctx); err != nil {
 		log.Fatal().Err(err).Msg("server stopped with error")
 	}
-}
-
-func loadConfig() *config.Config {
-	cfgPath := os.Getenv("CONFIG_PATH")
-	cfg, err := config.Load(cfgPath)
-	if err != nil {
-		log.Fatal().Err(err).Msg("failed to load config")
-	}
-	return cfg
-}
-
-func buildPostgresDSN(cfg *config.Config) database.PostgresConfig {
-	dsn := fmt.Sprintf(
-		"postgres://%s:%s@%s:%d/%s?sslmode=%s",
-		cfg.Database.Postgres.User,
-		cfg.Database.Postgres.Password,
-		cfg.Database.Postgres.Host,
-		cfg.Database.Postgres.Port,
-		cfg.Database.Postgres.DBName,
-		cfg.Database.Postgres.SSLMode,
-	)
-
-	return database.PostgresConfig{
-		DSN:             dsn,
-		MaxOpenConns:    cfg.Database.Postgres.MaxOpenConns,
-		MaxIdleConns:    cfg.Database.Postgres.MaxIdleConns,
-		ConnMaxLifetime: cfg.Database.Postgres.ConnMaxLifetime,
-		ConnMaxIdleTime: cfg.Database.Postgres.ConnMaxIdleTime,
-	}
-}
-
-func registerRoutes(r chi.Router, cfg *config.Config, pool *pgxpool.Pool, redisClient *redis.Client) {
-	r.Use(chimiddleware.RequestID)
-	r.Use(middleware.RequestID)
-	r.Use(middleware.Logger)
-	r.Use(middleware.Recovery)
-	r.Use(middleware.CORS([]string{"*"}))
-
-	r.Get("/health", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`{"status":"ok"}`))
-	})
-
-	authRepo := auth.NewRepository(pool)
-	authSvc := auth.NewService(authRepo, auth.TokenConfig{
-		Secret:     cfg.JWT.Secret,
-		AccessTTL:  cfg.JWT.AccessTTL,
-		RefreshTTL: cfg.JWT.RefreshTTL,
-	})
-	authHandler := auth.NewHandler(authSvc)
-
-	r.Route("/api/v1/auth", func(r chi.Router) {
-		r.Post("/register", authHandler.Register)
-		r.Post("/login", authHandler.Login)
-		r.Post("/refresh", authHandler.RefreshToken)
-	})
-
-	auditRepo := audit.NewRepository(pool)
-	auditSvc := audit.NewService(auditRepo)
-
-	notifRepo := notification.NewRepository(pool)
-	notifSvc := notification.NewService(notifRepo, redisClient)
-
-	proposalRepo := proposal.NewRepository(pool)
-
-	minioStore, err := storage.NewMinio(storage.Config{
-		Endpoint:  cfg.Storage.Minio.Endpoint,
-		AccessKey: cfg.Storage.Minio.AccessKey,
-		SecretKey: cfg.Storage.Minio.SecretKey,
-		Bucket:    cfg.Storage.Minio.Bucket,
-		UseSSL:    cfg.Storage.Minio.UseSSL,
-		Region:    cfg.Storage.Minio.Region,
-	})
-	if err != nil {
-		log.Warn().Err(err).Msg("MinIO not available, file upload will fail")
-		minioStore = nil
-	}
-
-	proposalSvc := proposal.NewService(proposalRepo, minioStore, auditSvc, notifSvc)
-	proposalHandler := proposal.NewHandler(proposalSvc)
-
-	r.Route("/api/v1/proposals", func(r chi.Router) {
-		r.Group(func(r chi.Router) {
-			r.Use(middleware.Authenticate(cfg.JWT.Secret))
-			r.Post("/", proposalHandler.Create)
-			r.Get("/", proposalHandler.List)
-			r.Get("/page", proposalHandler.ListPage)
-			r.Get("/{id}", proposalHandler.GetByID)
-		})
-
-		r.Group(func(r chi.Router) {
-			r.Use(middleware.Authenticate(cfg.JWT.Secret))
-			r.Use(middleware.RequireRole("applicant"))
-			r.Put("/{id}", proposalHandler.Update)
-			r.Post("/{id}/submit", proposalHandler.Submit)
-			r.Post("/{id}/documents", proposalHandler.UploadDocument)
-			r.Get("/{id}/documents", proposalHandler.GetDocuments)
-		})
-	})
-
-	reviewRepo := review.NewRepository(pool)
-	reviewSvc := review.NewService(reviewRepo, proposalRepo, auditSvc, notifSvc)
-	reviewHandler := review.NewHandler(reviewSvc)
-
-	r.Route("/api/v1/reviews", func(r chi.Router) {
-		r.Group(func(r chi.Router) {
-			r.Use(middleware.Authenticate(cfg.JWT.Secret))
-			r.Get("/{id}", reviewHandler.GetByProposal)
-		})
-
-		r.Group(func(r chi.Router) {
-			r.Use(middleware.Authenticate(cfg.JWT.Secret))
-			r.Use(middleware.RequireRole("reviewer"))
-			r.Post("/{id}", reviewHandler.Create)
-		})
-
-		r.Group(func(r chi.Router) {
-			r.Use(middleware.Authenticate(cfg.JWT.Secret))
-			r.Use(middleware.RequireRole("admin"))
-			r.Post("/{id}/approve", reviewHandler.Approve)
-			r.Post("/{id}/reject", reviewHandler.Reject)
-		})
-	})
-
-	riskRepo := risk.NewRepository(pool)
-	riskSvc := risk.NewService(riskRepo, proposalRepo)
-	riskHandler := risk.NewHandler(riskSvc)
-
-	r.Route("/api/v1/risk", func(r chi.Router) {
-		r.Use(middleware.Authenticate(cfg.JWT.Secret))
-		r.Use(middleware.RequireRole("admin", "reviewer"))
-		r.Post("/{id}", riskHandler.Score)
-		r.Get("/{id}", riskHandler.GetScore)
-	})
-
-	auditHandler := audit.NewHandler(auditSvc)
-	r.Route("/api/v1/audit-logs", func(r chi.Router) {
-		r.Use(middleware.Authenticate(cfg.JWT.Secret))
-		r.Use(middleware.RequireRole("admin"))
-		r.Get("/", auditHandler.List)
-		r.Get("/{entity_id}", auditHandler.List)
-	})
-
-	notifHandler := notification.NewHandler(notifSvc)
-	r.Route("/api/v1/notifications", func(r chi.Router) {
-		r.Use(middleware.Authenticate(cfg.JWT.Secret))
-		r.Get("/", notifHandler.List)
-		r.Get("/stream", notifHandler.Stream)
-		r.Patch("/read", notifHandler.MarkRead)
-	})
-}
-
-func registerGRPCServices(s *grpc.Server) {
 }
