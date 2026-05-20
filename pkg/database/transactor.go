@@ -14,7 +14,7 @@ func NewTransactor(pool *pgxpool.Pool) *Transactor {
 	return &Transactor{pool: pool}
 }
 
-func (t *Transactor) WithinTransaction(ctx context.Context, fn func(context.Context) error) error {
+func (t *Transactor) WithinTransaction(ctx context.Context, fn func(context.Context) error) (err error) {
 	if t == nil || t.pool == nil {
 		return fn(ctx)
 	}
@@ -24,10 +24,19 @@ func (t *Transactor) WithinTransaction(ctx context.Context, fn func(context.Cont
 		return err
 	}
 
+	defer func() {
+		if r := recover(); r != nil {
+			tx.Rollback(ctx)
+			panic(r)
+		}
+		if err != nil {
+			tx.Rollback(ctx)
+		}
+	}()
+
 	ctx = WithTx(ctx, tx)
 
-	if err := fn(ctx); err != nil {
-		tx.Rollback(ctx)
+	if err = fn(ctx); err != nil {
 		return err
 	}
 

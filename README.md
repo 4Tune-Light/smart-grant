@@ -1,7 +1,7 @@
 # Smart Grant Review Platform
 
-> Production-like grant management platform with AI-assisted risk scoring.
-> Built for CV/portfolio — demonstrates senior-level backend engineering.
+> Production-like grant management platform with decision-tree-assisted risk scoring.
+> Demonstrates production-grade backend engineering concepts.
 
 [![Go Version](https://img.shields.io/badge/go-1.26-blue)](https://go.dev/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
@@ -13,7 +13,7 @@
 
 ## Highlights
 
-- **C4.5 Decision Tree** — risk scoring algorithm implemented from scratch
+- **Intelligent risk scoring using C4.5 decision tree** — risk scoring algorithm implemented from scratch
 - **Async Processing** — Redis Streams for decoupled task execution (with dead-letter handling)
 - **Full Observability** — OpenTelemetry traces + Prometheus metrics + Jaeger tracing
 - **RBAC** — JWT-based role access control (admin, reviewer, applicant)
@@ -45,7 +45,7 @@ OpenTelemetry Collector
     --- Jaeger      (distributed tracing, port 16686)
 ```
 
-### Domain Pattern
+### Domain-oriented modular architecture
 
 Each domain (`internal/{domain}/`) follows:
 
