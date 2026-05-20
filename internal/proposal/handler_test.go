@@ -13,25 +13,26 @@ import (
 	"github.com/go-chi/chi/v5"
 	chimiddleware "github.com/go-chi/chi/v5/middleware"
 	"github.com/rizky/smart-grant/internal/middleware"
+	proposaldto "github.com/rizky/smart-grant/internal/proposal/dto"
 	"github.com/rizky/smart-grant/pkg/cursor"
 	"github.com/rizky/smart-grant/pkg/response"
 	"github.com/stretchr/testify/assert"
 )
 
 type mockServiceHandler struct {
-	createFn  func(ctx context.Context, req CreateProposalRequest) (*ProposalResponse, error)
-	listFn    func(ctx context.Context, status string, limit int, c *cursor.Cursor) ([]ProposalResponse, *cursor.Cursor, error)
-	listPgFn  func(ctx context.Context, status string, limit int, page int) ([]ProposalResponse, int, error)
+	createFn  func(ctx context.Context, req proposaldto.CreateProposalRequest) (*proposaldto.ProposalResponse, error)
+	listFn    func(ctx context.Context, status string, limit int, c *cursor.Cursor) ([]proposaldto.ProposalResponse, *cursor.Cursor, error)
+	listPgFn  func(ctx context.Context, status string, limit int, page int) ([]proposaldto.ProposalResponse, int, error)
 }
 
-func (m *mockServiceHandler) Create(ctx context.Context, req CreateProposalRequest) (*ProposalResponse, error) { return m.createFn(ctx, req) }
-func (m *mockServiceHandler) Update(ctx context.Context, proposalID string, req UpdateProposalRequest) (*ProposalResponse, error) { return nil, nil }
-func (m *mockServiceHandler) Submit(ctx context.Context, proposalID string) (*ProposalResponse, error) { return nil, nil }
-func (m *mockServiceHandler) GetByID(ctx context.Context, proposalID string) (*ProposalResponse, error) { return nil, nil }
-func (m *mockServiceHandler) List(ctx context.Context, status string, limit int, c *cursor.Cursor) ([]ProposalResponse, *cursor.Cursor, error) { return m.listFn(ctx, status, limit, c) }
-func (m *mockServiceHandler) ListPage(ctx context.Context, status string, limit int, page int) ([]ProposalResponse, int, error) { return m.listPgFn(ctx, status, limit, page) }
-func (m *mockServiceHandler) UploadDocument(ctx context.Context, proposalID string, file io.Reader, header *multipart.FileHeader) (*DocumentResponse, error) { return nil, nil }
-func (m *mockServiceHandler) GetDocuments(ctx context.Context, proposalID string) ([]DocumentResponse, error) { return nil, nil }
+func (m *mockServiceHandler) Create(ctx context.Context, req proposaldto.CreateProposalRequest) (*proposaldto.ProposalResponse, error) { return m.createFn(ctx, req) }
+func (m *mockServiceHandler) Update(ctx context.Context, proposalID string, req proposaldto.UpdateProposalRequest) (*proposaldto.ProposalResponse, error) { return nil, nil }
+func (m *mockServiceHandler) Submit(ctx context.Context, proposalID string) (*proposaldto.ProposalResponse, error) { return nil, nil }
+func (m *mockServiceHandler) GetByID(ctx context.Context, proposalID string) (*proposaldto.ProposalResponse, error) { return nil, nil }
+func (m *mockServiceHandler) List(ctx context.Context, status string, limit int, c *cursor.Cursor) ([]proposaldto.ProposalResponse, *cursor.Cursor, error) { return m.listFn(ctx, status, limit, c) }
+func (m *mockServiceHandler) ListPage(ctx context.Context, status string, limit int, page int) ([]proposaldto.ProposalResponse, int, error) { return m.listPgFn(ctx, status, limit, page) }
+func (m *mockServiceHandler) UploadDocument(ctx context.Context, proposalID string, file io.Reader, header *multipart.FileHeader) (*proposaldto.DocumentResponse, error) { return nil, nil }
+func (m *mockServiceHandler) GetDocuments(ctx context.Context, proposalID string) ([]proposaldto.DocumentResponse, error) { return nil, nil }
 
 func authMw(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -53,14 +54,14 @@ func proposalRouter(h *Handler) chi.Router {
 
 func TestProposalCreateHandler_Success(t *testing.T) {
 	svc := &mockServiceHandler{
-		createFn: func(ctx context.Context, req CreateProposalRequest) (*ProposalResponse, error) {
-			return &ProposalResponse{Title: req.Title, Status: "draft"}, nil
+		createFn: func(ctx context.Context, req proposaldto.CreateProposalRequest) (*proposaldto.ProposalResponse, error) {
+			return &proposaldto.ProposalResponse{Title: req.Title, Status: string(StatusDraft)}, nil
 		},
 	}
 	h := NewHandler(svc)
 	r := proposalRouter(h)
 
-	body, _ := json.Marshal(CreateProposalRequest{
+	body, _ := json.Marshal(proposaldto.CreateProposalRequest{
 		Title: "Grant", Description: "Need funding for project X",
 		NominalAmount: 100000000, Organization: "Org",
 	})
@@ -89,8 +90,8 @@ func TestProposalCreateHandler_InvalidBody(t *testing.T) {
 
 func TestProposalListHandler_Cursor(t *testing.T) {
 	svc := &mockServiceHandler{
-		listFn: func(ctx context.Context, status string, limit int, c *cursor.Cursor) ([]ProposalResponse, *cursor.Cursor, error) {
-			return []ProposalResponse{{ID: "p1", Title: "Test"}}, &cursor.Cursor{LastID: "p1"}, nil
+		listFn: func(ctx context.Context, status string, limit int, c *cursor.Cursor) ([]proposaldto.ProposalResponse, *cursor.Cursor, error) {
+			return []proposaldto.ProposalResponse{{ID: "p1", Title: "Test"}}, &cursor.Cursor{LastID: "p1"}, nil
 		},
 	}
 	h := NewHandler(svc)
@@ -108,8 +109,8 @@ func TestProposalListHandler_Cursor(t *testing.T) {
 
 func TestProposalListPageHandler_Success(t *testing.T) {
 	svc := &mockServiceHandler{
-		listPgFn: func(ctx context.Context, status string, limit int, page int) ([]ProposalResponse, int, error) {
-			return []ProposalResponse{{ID: "p1", Title: "Test"}}, 1, nil
+		listPgFn: func(ctx context.Context, status string, limit int, page int) ([]proposaldto.ProposalResponse, int, error) {
+			return []proposaldto.ProposalResponse{{ID: "p1", Title: "Test"}}, 1, nil
 		},
 	}
 	h := NewHandler(svc)

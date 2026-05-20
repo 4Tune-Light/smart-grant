@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
+	authdto "github.com/rizky/smart-grant/internal/auth/dto"
 	"golang.org/x/crypto/argon2"
 )
 
@@ -28,10 +29,10 @@ type TokenConfig struct {
 }
 
 type Service interface {
-	Register(ctx context.Context, req RegisterRequest) (*AuthResponse, error)
-	Login(ctx context.Context, req LoginRequest) (*AuthResponse, error)
-	RefreshToken(ctx context.Context, req RefreshRequest) (*AuthResponse, error)
-	ListUsers(ctx context.Context, role string, limit int, page int) ([]UserInfo, int, error)
+	Register(ctx context.Context, req authdto.RegisterRequest) (*authdto.AuthResponse, error)
+	Login(ctx context.Context, req authdto.LoginRequest) (*authdto.AuthResponse, error)
+	RefreshToken(ctx context.Context, req authdto.RefreshRequest) (*authdto.AuthResponse, error)
+	ListUsers(ctx context.Context, role string, limit int, page int) ([]authdto.UserInfo, int, error)
 	UpdateRole(ctx context.Context, targetID string, newRole string) error
 }
 
@@ -44,7 +45,7 @@ func NewService(repo Repository, token TokenConfig) Service {
 	return &service{repo: repo, token: token}
 }
 
-func (s *service) Register(ctx context.Context, req RegisterRequest) (*AuthResponse, error) {
+func (s *service) Register(ctx context.Context, req authdto.RegisterRequest) (*authdto.AuthResponse, error) {
 	hash, err := hashPassword(req.Password)
 	if err != nil {
 		return nil, fmt.Errorf("hash password: %w", err)
@@ -64,7 +65,7 @@ func (s *service) Register(ctx context.Context, req RegisterRequest) (*AuthRespo
 	return s.generateTokenResponse(user)
 }
 
-func (s *service) Login(ctx context.Context, req LoginRequest) (*AuthResponse, error) {
+func (s *service) Login(ctx context.Context, req authdto.LoginRequest) (*authdto.AuthResponse, error) {
 	user, err := s.repo.FindByEmail(ctx, req.Email)
 	if err != nil {
 		if err == ErrUserNotFound {
@@ -85,7 +86,7 @@ func (s *service) Login(ctx context.Context, req LoginRequest) (*AuthResponse, e
 	return s.generateTokenResponse(user)
 }
 
-func (s *service) RefreshToken(ctx context.Context, req RefreshRequest) (*AuthResponse, error) {
+func (s *service) RefreshToken(ctx context.Context, req authdto.RefreshRequest) (*authdto.AuthResponse, error) {
 	claims := &Claims{}
 	token, err := jwt.ParseWithClaims(req.RefreshToken, claims, func(t *jwt.Token) (interface{}, error) {
 		if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
@@ -113,7 +114,7 @@ func (s *service) RefreshToken(ctx context.Context, req RefreshRequest) (*AuthRe
 	return s.generateTokenResponse(user)
 }
 
-func (s *service) generateTokenResponse(user *User) (*AuthResponse, error) {
+func (s *service) generateTokenResponse(user *User) (*authdto.AuthResponse, error) {
 	now := time.Now()
 
 	accessClaims := &Claims{
@@ -148,12 +149,12 @@ func (s *service) generateTokenResponse(user *User) (*AuthResponse, error) {
 		return nil, fmt.Errorf("sign refresh token: %w", err)
 	}
 
-	return &AuthResponse{
+	return &authdto.AuthResponse{
 		AccessToken:  accessToken,
 		RefreshToken: refreshToken,
 		TokenType:    "Bearer",
 		ExpiresIn:    int64(s.token.AccessTTL.Seconds()),
-		User: UserInfo{
+		User: authdto.UserInfo{
 			ID:    user.ID,
 			Email: user.Email,
 			Name:  user.Name,
@@ -162,16 +163,16 @@ func (s *service) generateTokenResponse(user *User) (*AuthResponse, error) {
 	}, nil
 }
 
-func (s *service) ListUsers(ctx context.Context, role string, limit int, page int) ([]UserInfo, int, error) {
+func (s *service) ListUsers(ctx context.Context, role string, limit int, page int) ([]authdto.UserInfo, int, error) {
 	offset := (page - 1) * limit
 	users, total, err := s.repo.ListAll(ctx, role, limit, offset)
 	if err != nil {
 		return nil, 0, err
 	}
 
-	info := make([]UserInfo, len(users))
+	info := make([]authdto.UserInfo, len(users))
 	for i, u := range users {
-		info[i] = UserInfo{ID: u.ID, Email: u.Email, Name: u.Name, Role: u.Role}
+		info[i] = authdto.UserInfo{ID: u.ID, Email: u.Email, Name: u.Name, Role: u.Role}
 	}
 	return info, total, nil
 }

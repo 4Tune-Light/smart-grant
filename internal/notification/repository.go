@@ -3,22 +3,11 @@ package notification
 import (
 	"context"
 	"fmt"
-	"time"
 
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/rizky/smart-grant/pkg/cursor"
+	"github.com/rizky/smart-grant/pkg/database"
 )
-
-type Notification struct {
-	ID        string    `json:"id"`
-	UserID    string    `json:"user_id"`
-	Type      string    `json:"type"`
-	Title     string    `json:"title"`
-	Body      string    `json:"body"`
-	IsRead    bool      `json:"is_read"`
-	CreatedAt time.Time `json:"created_at"`
-}
 
 type Repository interface {
 	Insert(ctx context.Context, n *Notification) error
@@ -27,11 +16,11 @@ type Repository interface {
 }
 
 type repository struct {
-	pool *pgxpool.Pool
+	q *database.Querier
 }
 
-func NewRepository(pool *pgxpool.Pool) Repository {
-	return &repository{pool: pool}
+func NewRepository(q *database.Querier) Repository {
+	return &repository{q: q}
 }
 
 func (r *repository) Insert(ctx context.Context, n *Notification) error {
@@ -39,7 +28,7 @@ func (r *repository) Insert(ctx context.Context, n *Notification) error {
 		INSERT INTO notifications (user_id, type, title, body)
 		VALUES ($1, $2, $3, $4)
 		RETURNING id, created_at`
-	return r.pool.QueryRow(ctx, query, n.UserID, n.Type, n.Title, n.Body).Scan(&n.ID, &n.CreatedAt)
+	return r.q.QueryRow(ctx, query, n.UserID, n.Type, n.Title, n.Body).Scan(&n.ID, &n.CreatedAt)
 }
 
 func (r *repository) FindByUserID(ctx context.Context, userID string, limit int, c *cursor.Cursor) ([]Notification, *cursor.Cursor, error) {
@@ -59,7 +48,7 @@ func (r *repository) FindByUserID(ctx context.Context, userID string, limit int,
 	query += fmt.Sprintf(` ORDER BY created_at DESC, id DESC LIMIT $%d`, argIdx)
 	args = append(args, limit+1)
 
-	rows, err := r.pool.Query(ctx, query, args...)
+	rows, err := r.q.Query(ctx, query, args...)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -87,7 +76,7 @@ func (r *repository) FindByUserID(ctx context.Context, userID string, limit int,
 
 func (r *repository) MarkRead(ctx context.Context, id string, userID string) error {
 	query := `UPDATE notifications SET is_read = true WHERE id = $1 AND user_id = $2`
-	result, err := r.pool.Exec(ctx, query, id, userID)
+	result, err := r.q.Exec(ctx, query, id, userID)
 	if err != nil {
 		return err
 	}

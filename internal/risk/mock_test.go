@@ -34,7 +34,7 @@ func (m *mockProposalRepo) FindByID(ctx context.Context, id string) (*proposal.P
 	return &proposal.Proposal{
 		ID: id, Title: "Test", Description: "Test",
 		NominalAmount: 500000000, Organization: "Org",
-		Status: "submitted", CreatedAt: time.Now(), UpdatedAt: time.Now(),
+		Status: proposal.StatusSubmitted, CreatedAt: time.Now(), UpdatedAt: time.Now(),
 	}, nil
 }
 func (m *mockProposalRepo) ListByApplicant(ctx context.Context, applicantID string, status string, limit int, c *cursor.Cursor) ([]proposal.Proposal, *cursor.Cursor, error) { return nil, nil, nil }

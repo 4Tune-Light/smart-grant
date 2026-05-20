@@ -19,6 +19,8 @@ import (
 	"github.com/rizky/smart-grant/internal/risk"
 	riskpb "github.com/rizky/smart-grant/proto/risk"
 	notifpb "github.com/rizky/smart-grant/proto/notification"
+	"github.com/rizky/smart-grant/pkg/database"
+	"github.com/rizky/smart-grant/pkg/idempotency"
 	"github.com/rizky/smart-grant/pkg/storage"
 )
 
@@ -32,13 +34,14 @@ type Services struct {
 }
 
 func NewServices(cfg *config.Config, pool *pgxpool.Pool, rdb *redis.Client) *Services {
+	q := database.NewQuerier(pool)
 	return &Services{
-		Auth:    newAuthHandler(cfg, pool),
-		Proposal: newProposalHandler(cfg, pool, rdb),
-		Review:  newReviewHandler(cfg, pool),
-		Risk:    newRiskHandler(cfg, pool),
-		Audit:   newAuditHandler(pool),
-		Notif:   newNotifHandler(pool, rdb),
+		Auth:    newAuthHandler(cfg, q),
+		Proposal: newProposalHandler(cfg, q, rdb),
+		Review:  newReviewHandler(q),
+		Risk:    newRiskHandler(q),
+		Audit:   newAuditHandler(q),
+		Notif:   newNotifHandler(q, rdb),
 	}
 }
 
@@ -49,6 +52,9 @@ func RegisterRoutes(r chi.Router, cfg *config.Config, pool *pgxpool.Pool, rdb *r
 	r.Use(middleware.Recovery)
 	r.Use(middleware.CORS([]string{"*"}))
 	r.Use(middleware.OTelHTTP(cfg.OTel.ServiceName + "-backend"))
+
+	idempStore := idempotency.NewStore(rdb)
+	r.Use(middleware.Idempotency(idempStore))
 
 	r.Get("/health", healthHandler)
 
@@ -68,8 +74,8 @@ func healthHandler(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte(`{"status":"ok"}`))
 }
 
-func newAuthHandler(cfg *config.Config, pool *pgxpool.Pool) *auth.Handler {
-	repo := auth.NewRepository(pool)
+func newAuthHandler(cfg *config.Config, q *database.Querier) *auth.Handler {
+	repo := auth.NewRepository(q)
 	svc := auth.NewService(repo, auth.TokenConfig{
 		Secret:     cfg.JWT.Secret,
 		AccessTTL:  cfg.JWT.AccessTTL,
@@ -78,10 +84,11 @@ func newAuthHandler(cfg *config.Config, pool *pgxpool.Pool) *auth.Handler {
 	return auth.NewHandler(svc)
 }
 
-func newProposalHandler(cfg *config.Config, pool *pgxpool.Pool, rdb *redis.Client) *proposal.Handler {
-	proposalRepo := proposal.NewRepository(pool)
-	auditSvc := audit.NewService(audit.NewRepository(pool))
-	notifSvc := notification.NewService(notification.NewRepository(pool), rdb)
+func newProposalHandler(cfg *config.Config, q *database.Querier, rdb *redis.Client) *proposal.Handler {
+	proposalRepo := proposal.NewRepository(q)
+	auditSvc := audit.NewService(audit.NewRepository(q))
+	notifSvc := notification.NewService(notification.NewRepository(q), rdb)
+	tx := database.NewTransactor(q.Pool()) // pool set in NewServices
 
 	minioStore, err := storage.NewMinio(storage.Config{
 		Endpoint:  cfg.Storage.Minio.Endpoint,
@@ -95,35 +102,36 @@ func newProposalHandler(cfg *config.Config, pool *pgxpool.Pool, rdb *redis.Clien
 		minioStore = nil
 	}
 
-	svc := proposal.NewService(proposalRepo, minioStore, auditSvc, notifSvc)
+	svc := proposal.NewService(proposalRepo, minioStore, auditSvc, notifSvc, tx)
 	return proposal.NewHandler(svc)
 }
 
-func newReviewHandler(cfg *config.Config, pool *pgxpool.Pool) *review.Handler {
-	proposalRepo := proposal.NewRepository(pool)
-	reviewRepo := review.NewRepository(pool)
-	auditSvc := audit.NewService(audit.NewRepository(pool))
-	notifSvc := notification.NewService(notification.NewRepository(pool), nil)
+func newReviewHandler(q *database.Querier) *review.Handler {
+	proposalRepo := proposal.NewRepository(q)
+	reviewRepo := review.NewRepository(q)
+	auditSvc := audit.NewService(audit.NewRepository(q))
+	notifSvc := notification.NewService(notification.NewRepository(q), nil)
+	tx := database.NewTransactor(q.Pool())
 
-	svc := review.NewService(reviewRepo, proposalRepo, auditSvc, notifSvc)
+	svc := review.NewService(reviewRepo, proposalRepo, auditSvc, notifSvc, tx)
 	return review.NewHandler(svc)
 }
 
-func newRiskHandler(cfg *config.Config, pool *pgxpool.Pool) *risk.Handler {
-	riskRepo := risk.NewRepository(pool)
-	proposalRepo := proposal.NewRepository(pool)
+func newRiskHandler(q *database.Querier) *risk.Handler {
+	riskRepo := risk.NewRepository(q)
+	proposalRepo := proposal.NewRepository(q)
 	svc := risk.NewService(riskRepo, proposalRepo)
 	return risk.NewHandler(svc)
 }
 
-func newAuditHandler(pool *pgxpool.Pool) *audit.Handler {
-	repo := audit.NewRepository(pool)
+func newAuditHandler(q *database.Querier) *audit.Handler {
+	repo := audit.NewRepository(q)
 	svc := audit.NewService(repo)
 	return audit.NewHandler(svc)
 }
 
-func newNotifHandler(pool *pgxpool.Pool, rdb *redis.Client) *notification.Handler {
-	repo := notification.NewRepository(pool)
+func newNotifHandler(q *database.Querier, rdb *redis.Client) *notification.Handler {
+	repo := notification.NewRepository(q)
 	svc := notification.NewService(repo, rdb)
 	return notification.NewHandler(svc)
 }
@@ -219,13 +227,13 @@ func registerNotificationRoutes(r chi.Router, cfg *config.Config, h *notificatio
 	})
 }
 
-func RegisterGRPC(s *grpc.Server, pool *pgxpool.Pool) {
-	riskRepo := risk.NewRepository(pool)
-	proposalRepo := proposal.NewRepository(pool)
+func RegisterGRPC(s *grpc.Server, q *database.Querier) {
+	riskRepo := risk.NewRepository(q)
+	proposalRepo := proposal.NewRepository(q)
 	riskSvc := risk.NewService(riskRepo, proposalRepo)
 	riskpb.RegisterRiskServiceServer(s, risk.NewGRPCServer(riskSvc))
 
-	notifRepo := notification.NewRepository(pool)
+	notifRepo := notification.NewRepository(q)
 	notifSvc := notification.NewService(notifRepo, nil)
 	notifpb.RegisterNotificationServiceServer(s, notification.NewGRPCServer(notifSvc))
 }

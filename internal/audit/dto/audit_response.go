@@ -1,10 +1,6 @@
-package audit
+package dto
 
-import (
-	"time"
-
-	"github.com/rizky/smart-grant/pkg/cursor"
-)
+import "time"
 
 type AuditResponse struct {
 	ID         string    `json:"id"`
@@ -15,22 +11,4 @@ type AuditResponse struct {
 	OldValues  string    `json:"old_values,omitempty"`
 	NewValues  string    `json:"new_values,omitempty"`
 	CreatedAt  time.Time `json:"created_at"`
-}
-
-type LogEntry struct {
-	EntityType string
-	EntityID   string
-	Action     string
-	ActorID    string
-	OldValues  string
-	NewValues  string
-}
-
-type AuditFilter struct {
-	EntityType string
-	EntityID   string
-	ActorID    string
-	Action     string
-	Limit      int
-	Cursor     *cursor.Cursor
 }

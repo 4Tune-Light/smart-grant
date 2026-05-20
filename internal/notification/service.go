@@ -8,14 +8,16 @@ import (
 
 	"github.com/redis/go-redis/v9"
 	"github.com/rizky/smart-grant/internal/middleware"
+	notificationdto "github.com/rizky/smart-grant/internal/notification/dto"
 	"github.com/rizky/smart-grant/pkg/cursor"
+	"github.com/rizky/smart-grant/pkg/retry"
 )
 
 type Service interface {
 	Send(ctx context.Context, userID string, notifType string, title string, body string) error
-	List(ctx context.Context, limit int, c *cursor.Cursor) ([]NotificationResponse, *cursor.Cursor, error)
+	List(ctx context.Context, limit int, c *cursor.Cursor) ([]notificationdto.NotificationResponse, *cursor.Cursor, error)
 	MarkRead(ctx context.Context, notificationID string) error
-	Subscribe(ctx context.Context) (<-chan NotificationEvent, error)
+	Subscribe(ctx context.Context) (<-chan notificationdto.NotificationEvent, error)
 }
 
 type service struct {
@@ -41,7 +43,7 @@ func (s *service) Send(ctx context.Context, userID string, notifType string, tit
 	}
 
 	if s.rdb != nil {
-		event := NotificationEvent{
+		event := notificationdto.NotificationEvent{
 			ID:        n.ID,
 			UserID:    userID,
 			Type:      notifType,
@@ -56,10 +58,13 @@ func (s *service) Send(ctx context.Context, userID string, notifType string, tit
 			"payload": string(data),
 		}
 
-		if err := s.rdb.XAdd(ctx, &redis.XAddArgs{
-			Stream: "notifications",
-			Values: streamEntry,
-		}).Err(); err != nil {
+		err := retry.Do(ctx, func() error {
+			return s.rdb.XAdd(ctx, &redis.XAddArgs{
+				Stream: "notifications",
+				Values: streamEntry,
+			}).Err()
+		})
+		if err != nil {
 			return fmt.Errorf("publish to stream: %w", err)
 		}
 	}
@@ -67,7 +72,7 @@ func (s *service) Send(ctx context.Context, userID string, notifType string, tit
 	return nil
 }
 
-func (s *service) List(ctx context.Context, limit int, c *cursor.Cursor) ([]NotificationResponse, *cursor.Cursor, error) {
+func (s *service) List(ctx context.Context, limit int, c *cursor.Cursor) ([]notificationdto.NotificationResponse, *cursor.Cursor, error) {
 	userID, _ := ctx.Value(middleware.AuthUserIDKey).(string)
 
 	notifications, nextCursor, err := s.repo.FindByUserID(ctx, userID, limit, c)
@@ -75,9 +80,9 @@ func (s *service) List(ctx context.Context, limit int, c *cursor.Cursor) ([]Noti
 		return nil, nil, err
 	}
 
-	responses := make([]NotificationResponse, len(notifications))
+	responses := make([]notificationdto.NotificationResponse, len(notifications))
 	for i, n := range notifications {
-		responses[i] = NotificationResponse{
+		responses[i] = notificationdto.NotificationResponse{
 			ID:        n.ID,
 			Type:      n.Type,
 			Title:     n.Title,
@@ -95,9 +100,9 @@ func (s *service) MarkRead(ctx context.Context, notificationID string) error {
 	return s.repo.MarkRead(ctx, notificationID, userID)
 }
 
-func (s *service) Subscribe(ctx context.Context) (<-chan NotificationEvent, error) {
+func (s *service) Subscribe(ctx context.Context) (<-chan notificationdto.NotificationEvent, error) {
 	userID, _ := ctx.Value(middleware.AuthUserIDKey).(string)
-	ch := make(chan NotificationEvent, 10)
+	ch := make(chan notificationdto.NotificationEvent, 10)
 
 	if s.rdb == nil {
 		close(ch)
@@ -116,7 +121,7 @@ func (s *service) Subscribe(ctx context.Context) (<-chan NotificationEvent, erro
 				return
 			}
 
-			var event NotificationEvent
+			var event notificationdto.NotificationEvent
 			if err := json.Unmarshal([]byte(msg.Payload), &event); err != nil {
 				continue
 			}

@@ -15,19 +15,21 @@ import (
 	"github.com/rizky/smart-grant/internal/audit"
 	"github.com/rizky/smart-grant/internal/middleware"
 	"github.com/rizky/smart-grant/internal/notification"
+	proposaldto "github.com/rizky/smart-grant/internal/proposal/dto"
 	"github.com/rizky/smart-grant/pkg/cursor"
+	"github.com/rizky/smart-grant/pkg/database"
 	"github.com/rizky/smart-grant/pkg/storage"
 )
 
 type Service interface {
-	Create(ctx context.Context, req CreateProposalRequest) (*ProposalResponse, error)
-	Update(ctx context.Context, proposalID string, req UpdateProposalRequest) (*ProposalResponse, error)
-	Submit(ctx context.Context, proposalID string) (*ProposalResponse, error)
-	GetByID(ctx context.Context, proposalID string) (*ProposalResponse, error)
-	List(ctx context.Context, status string, limit int, cursor *cursor.Cursor) ([]ProposalResponse, *cursor.Cursor, error)
-	ListPage(ctx context.Context, status string, limit int, page int) ([]ProposalResponse, int, error)
-	UploadDocument(ctx context.Context, proposalID string, file io.Reader, header *multipart.FileHeader) (*DocumentResponse, error)
-	GetDocuments(ctx context.Context, proposalID string) ([]DocumentResponse, error)
+	Create(ctx context.Context, req proposaldto.CreateProposalRequest) (*proposaldto.ProposalResponse, error)
+	Update(ctx context.Context, proposalID string, req proposaldto.UpdateProposalRequest) (*proposaldto.ProposalResponse, error)
+	Submit(ctx context.Context, proposalID string) (*proposaldto.ProposalResponse, error)
+	GetByID(ctx context.Context, proposalID string) (*proposaldto.ProposalResponse, error)
+	List(ctx context.Context, status string, limit int, cursor *cursor.Cursor) ([]proposaldto.ProposalResponse, *cursor.Cursor, error)
+	ListPage(ctx context.Context, status string, limit int, page int) ([]proposaldto.ProposalResponse, int, error)
+	UploadDocument(ctx context.Context, proposalID string, file io.Reader, header *multipart.FileHeader) (*proposaldto.DocumentResponse, error)
+	GetDocuments(ctx context.Context, proposalID string) ([]proposaldto.DocumentResponse, error)
 }
 
 type service struct {
@@ -35,13 +37,14 @@ type service struct {
 	storage storage.FileStorage
 	audit   audit.Service
 	notif   notification.Service
+	tx      *database.Transactor
 }
 
-func NewService(repo Repository, st storage.FileStorage, a audit.Service, n notification.Service) Service {
-	return &service{repo: repo, storage: st, audit: a, notif: n}
+func NewService(repo Repository, st storage.FileStorage, a audit.Service, n notification.Service, tx *database.Transactor) Service {
+	return &service{repo: repo, storage: st, audit: a, notif: n, tx: tx}
 }
 
-func (s *service) Create(ctx context.Context, req CreateProposalRequest) (*ProposalResponse, error) {
+func (s *service) Create(ctx context.Context, req proposaldto.CreateProposalRequest) (*proposaldto.ProposalResponse, error) {
 	userID, _ := ctx.Value(middleware.AuthUserIDKey).(string)
 	role, _ := ctx.Value(middleware.AuthRoleKey).(string)
 
@@ -49,35 +52,41 @@ func (s *service) Create(ctx context.Context, req CreateProposalRequest) (*Propo
 		return nil, ErrNotApplicant
 	}
 
-	p := &Proposal{
-		ApplicantID:   userID,
-		Title:         req.Title,
-		Description:   req.Description,
-		NominalAmount: req.NominalAmount,
-		Organization:  req.Organization,
-		Status:        "draft",
-		Version:       1,
-	}
+	var resp *proposaldto.ProposalResponse
+	err := s.tx.WithinTransaction(ctx, func(txCtx context.Context) error {
+		p := &Proposal{
+			ApplicantID:   userID,
+			Title:         req.Title,
+			Description:   req.Description,
+			NominalAmount: req.NominalAmount,
+			Organization:  req.Organization,
+			Status:        StatusDraft,
+			Version:       1,
+		}
 
-	if err := s.repo.Create(ctx, p); err != nil {
-		return nil, err
-	}
+		if err := s.repo.Create(txCtx, p); err != nil {
+			return err
+		}
 
-	snapshot, _ := json.Marshal(p)
-	s.repo.CreateVersion(ctx, p.ID, 1, string(snapshot))
+		snapshot, _ := json.Marshal(p)
+		s.repo.CreateVersion(txCtx, p.ID, 1, string(snapshot))
 
-	s.audit.Log(ctx, audit.LogEntry{
-		EntityType: "proposal",
-		EntityID:   p.ID,
-		Action:     "create",
-		ActorID:    userID,
-		NewValues:  string(snapshot),
+		s.audit.Log(txCtx, audit.LogEntry{
+			EntityType: "proposal",
+			EntityID:   p.ID,
+			Action:     "create",
+			ActorID:    userID,
+			NewValues:  string(snapshot),
+		})
+
+		resp = toProposalResp(p)
+		return nil
 	})
 
-	return toProposalResponse(p), nil
+	return resp, err
 }
 
-func (s *service) Update(ctx context.Context, proposalID string, req UpdateProposalRequest) (*ProposalResponse, error) {
+func (s *service) Update(ctx context.Context, proposalID string, req proposaldto.UpdateProposalRequest) (*proposaldto.ProposalResponse, error) {
 	userID, _ := ctx.Value(middleware.AuthUserIDKey).(string)
 
 	proposal, err := s.repo.FindByID(ctx, proposalID)
@@ -89,7 +98,7 @@ func (s *service) Update(ctx context.Context, proposalID string, req UpdatePropo
 		return nil, ErrNotOwner
 	}
 
-	if proposal.Status != "draft" {
+	if proposal.Status != StatusDraft {
 		return nil, ErrInvalidStatus
 	}
 
@@ -123,10 +132,10 @@ func (s *service) Update(ctx context.Context, proposalID string, req UpdatePropo
 		NewValues:  string(snapshot),
 	})
 
-	return toProposalResponse(proposal), nil
+	return toProposalResp(proposal), nil
 }
 
-func (s *service) Submit(ctx context.Context, proposalID string) (*ProposalResponse, error) {
+func (s *service) Submit(ctx context.Context, proposalID string) (*proposaldto.ProposalResponse, error) {
 	ctx, span := otel.Tracer("smart-grant").Start(ctx, "proposal.Submit")
 	defer span.End()
 
@@ -145,11 +154,11 @@ func (s *service) Submit(ctx context.Context, proposalID string) (*ProposalRespo
 		return nil, ErrNotOwner
 	}
 
-	if proposal.Status != "draft" {
+	if proposal.Status != StatusDraft {
 		return nil, ErrInvalidStatus
 	}
 
-	proposal.Status = "submitted"
+	proposal.Status = StatusSubmitted
 
 	if err := s.repo.Update(ctx, proposal); err != nil {
 		return nil, err
@@ -168,10 +177,10 @@ func (s *service) Submit(ctx context.Context, proposalID string) (*ProposalRespo
 		fmt.Sprintf("Your proposal '%s' has been submitted for review.", proposal.Title),
 	)
 
-	return toProposalResponse(proposal), nil
+	return toProposalResp(proposal), nil
 }
 
-func (s *service) GetByID(ctx context.Context, proposalID string) (*ProposalResponse, error) {
+func (s *service) GetByID(ctx context.Context, proposalID string) (*proposaldto.ProposalResponse, error) {
 	userID, _ := ctx.Value(middleware.AuthUserIDKey).(string)
 	role, _ := ctx.Value(middleware.AuthRoleKey).(string)
 
@@ -184,10 +193,10 @@ func (s *service) GetByID(ctx context.Context, proposalID string) (*ProposalResp
 		return nil, ErrNotFound
 	}
 
-	return toProposalResponse(proposal), nil
+	return toProposalResp(proposal), nil
 }
 
-func (s *service) List(ctx context.Context, status string, limit int, c *cursor.Cursor) ([]ProposalResponse, *cursor.Cursor, error) {
+func (s *service) List(ctx context.Context, status string, limit int, c *cursor.Cursor) ([]proposaldto.ProposalResponse, *cursor.Cursor, error) {
 	userID, _ := ctx.Value(middleware.AuthUserIDKey).(string)
 	role, _ := ctx.Value(middleware.AuthRoleKey).(string)
 
@@ -204,15 +213,15 @@ func (s *service) List(ctx context.Context, status string, limit int, c *cursor.
 		return nil, nil, err
 	}
 
-	responses := make([]ProposalResponse, len(proposals))
+	responses := make([]proposaldto.ProposalResponse, len(proposals))
 	for i, p := range proposals {
-		responses[i] = *toProposalResponse(&p)
+		responses[i] = *toProposalResp(&p)
 	}
 
 	return responses, nextCursor, nil
 }
 
-func (s *service) ListPage(ctx context.Context, status string, limit int, page int) ([]ProposalResponse, int, error) {
+func (s *service) ListPage(ctx context.Context, status string, limit int, page int) ([]proposaldto.ProposalResponse, int, error) {
 	userID, _ := ctx.Value(middleware.AuthUserIDKey).(string)
 	role, _ := ctx.Value(middleware.AuthRoleKey).(string)
 
@@ -229,15 +238,15 @@ func (s *service) ListPage(ctx context.Context, status string, limit int, page i
 		return nil, 0, err
 	}
 
-	responses := make([]ProposalResponse, len(proposals))
+	responses := make([]proposaldto.ProposalResponse, len(proposals))
 	for i, p := range proposals {
-		responses[i] = *toProposalResponse(&p)
+		responses[i] = *toProposalResp(&p)
 	}
 
 	return responses, total, nil
 }
 
-func (s *service) UploadDocument(ctx context.Context, proposalID string, file io.Reader, header *multipart.FileHeader) (*DocumentResponse, error) {
+func (s *service) UploadDocument(ctx context.Context, proposalID string, file io.Reader, header *multipart.FileHeader) (*proposaldto.DocumentResponse, error) {
 	userID, _ := ctx.Value(middleware.AuthUserIDKey).(string)
 
 	proposal, err := s.repo.FindByID(ctx, proposalID)
@@ -274,7 +283,7 @@ func (s *service) UploadDocument(ctx context.Context, proposalID string, file io
 		return nil, err
 	}
 
-	return &DocumentResponse{
+	return &proposaldto.DocumentResponse{
 		ID:         d.ID,
 		ProposalID: d.ProposalID,
 		Filename:   d.Filename,
@@ -284,7 +293,7 @@ func (s *service) UploadDocument(ctx context.Context, proposalID string, file io
 	}, nil
 }
 
-func (s *service) GetDocuments(ctx context.Context, proposalID string) ([]DocumentResponse, error) {
+func (s *service) GetDocuments(ctx context.Context, proposalID string) ([]proposaldto.DocumentResponse, error) {
 	userID, _ := ctx.Value(middleware.AuthUserIDKey).(string)
 	role, _ := ctx.Value(middleware.AuthRoleKey).(string)
 
@@ -302,9 +311,9 @@ func (s *service) GetDocuments(ctx context.Context, proposalID string) ([]Docume
 		return nil, err
 	}
 
-	responses := make([]DocumentResponse, len(docs))
+	responses := make([]proposaldto.DocumentResponse, len(docs))
 	for i, d := range docs {
-		responses[i] = DocumentResponse{
+		responses[i] = proposaldto.DocumentResponse{
 			ID:         d.ID,
 			ProposalID: d.ProposalID,
 			Filename:   d.Filename,
@@ -317,15 +326,15 @@ func (s *service) GetDocuments(ctx context.Context, proposalID string) ([]Docume
 	return responses, nil
 }
 
-func toProposalResponse(p *Proposal) *ProposalResponse {
-	return &ProposalResponse{
+func toProposalResp(p *Proposal) *proposaldto.ProposalResponse {
+	return &proposaldto.ProposalResponse{
 		ID:            p.ID,
 		ApplicantID:   p.ApplicantID,
 		Title:         p.Title,
 		Description:   p.Description,
 		NominalAmount: p.NominalAmount,
 		Organization:  p.Organization,
-		Status:        p.Status,
+		Status:        string(p.Status),
 		Version:       p.Version,
 		CreatedAt:     p.CreatedAt,
 		UpdatedAt:     p.UpdatedAt,

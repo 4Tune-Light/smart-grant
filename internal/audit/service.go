@@ -4,12 +4,13 @@ import (
 	"context"
 	"encoding/json"
 
+	auditdto "github.com/rizky/smart-grant/internal/audit/dto"
 	"github.com/rizky/smart-grant/pkg/cursor"
 )
 
 type Service interface {
 	Log(ctx context.Context, entry LogEntry) error
-	List(ctx context.Context, filter AuditFilter) ([]AuditResponse, *cursor.Cursor, error)
+	List(ctx context.Context, filter AuditFilter) ([]auditdto.AuditResponse, *cursor.Cursor, error)
 }
 
 type service struct {
@@ -42,7 +43,7 @@ func (s *service) Log(ctx context.Context, entry LogEntry) error {
 	return s.repo.Insert(ctx, a)
 }
 
-func (s *service) List(ctx context.Context, filter AuditFilter) ([]AuditResponse, *cursor.Cursor, error) {
+func (s *service) List(ctx context.Context, filter AuditFilter) ([]auditdto.AuditResponse, *cursor.Cursor, error) {
 	if filter.Limit < 1 || filter.Limit > 100 {
 		filter.Limit = 20
 	}
@@ -52,9 +53,9 @@ func (s *service) List(ctx context.Context, filter AuditFilter) ([]AuditResponse
 		return nil, nil, err
 	}
 
-	responses := make([]AuditResponse, len(entries))
+	responses := make([]auditdto.AuditResponse, len(entries))
 	for i, e := range entries {
-		responses[i] = AuditResponse{
+		responses[i] = auditdto.AuditResponse{
 			ID:         e.ID,
 			EntityType: e.EntityType,
 			EntityID:   e.EntityID,

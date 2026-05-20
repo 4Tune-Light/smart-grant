@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/rizky/smart-grant/pkg/database"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/testcontainers/testcontainers-go"
@@ -44,7 +45,8 @@ func TestIntegration_AuthRepository(t *testing.T) {
 
 	runMigration(t, pool)
 
-	repo := NewRepository(pool)
+	q := database.NewQuerier(pool)
+	repo := NewRepository(q)
 
 	user := &User{Email: "test@example.com", PasswordHash: "hash", Name: "Test", Role: "applicant"}
 	err = repo.Create(ctx, user)

@@ -12,12 +12,13 @@ import (
 
 	"github.com/rizky/smart-grant/internal/middleware"
 	"github.com/rizky/smart-grant/internal/proposal"
+	riskdto "github.com/rizky/smart-grant/internal/risk/dto"
 	"github.com/rizky/smart-grant/internal/risk/engine"
 )
 
 type Service interface {
-	Score(ctx context.Context, proposalID string) (*RiskResponse, error)
-	GetScore(ctx context.Context, proposalID string) (*RiskResponse, error)
+	Score(ctx context.Context, proposalID string) (*riskdto.RiskResponse, error)
+	GetScore(ctx context.Context, proposalID string) (*riskdto.RiskResponse, error)
 	Retrain(ctx context.Context) (*RetrainResponse, error)
 }
 
@@ -62,7 +63,7 @@ func (s *service) getTree() *engine.DecisionTree {
 	return s.tree
 }
 
-func (s *service) Score(ctx context.Context, proposalID string) (*RiskResponse, error) {
+func (s *service) Score(ctx context.Context, proposalID string) (*riskdto.RiskResponse, error) {
 	ctx, span := otel.Tracer("smart-grant").Start(ctx, "risk.Score")
 	defer span.End()
 
@@ -116,7 +117,7 @@ func (s *service) Score(ctx context.Context, proposalID string) (*RiskResponse, 
 	return toResponse(score, features), nil
 }
 
-func (s *service) GetScore(ctx context.Context, proposalID string) (*RiskResponse, error) {
+func (s *service) GetScore(ctx context.Context, proposalID string) (*riskdto.RiskResponse, error) {
 	score, err := s.repo.FindByProposalID(ctx, proposalID)
 	if err != nil {
 		return nil, err
@@ -202,8 +203,8 @@ func treeDepth(node *engine.TreeNode) int {
 	return rightDepth + 1
 }
 
-func toResponse(score *RiskScore, features map[string]float64) *RiskResponse {
-	return &RiskResponse{
+func toResponse(score *RiskScore, features map[string]float64) *riskdto.RiskResponse {
+	return &riskdto.RiskResponse{
 		ID:           score.ID,
 		ProposalID:   score.ProposalID,
 		RiskLevel:    score.RiskLevel,

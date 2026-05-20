@@ -7,6 +7,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/rizky/smart-grant/internal/proposal"
+	reviewdto "github.com/rizky/smart-grant/internal/review/dto"
 	"github.com/rizky/smart-grant/pkg/response"
 	"github.com/rizky/smart-grant/pkg/validator"
 )
@@ -22,7 +23,7 @@ func NewHandler(svc Service) *Handler {
 func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 	proposalID := chi.URLParam(r, "id")
 
-	var req CreateReviewRequest
+	var req reviewdto.CreateReviewRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		response.Error(w, http.StatusBadRequest, "invalid_request", "invalid request body")
 		return

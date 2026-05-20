@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
+	authdto "github.com/rizky/smart-grant/internal/auth/dto"
 	"github.com/rizky/smart-grant/internal/middleware"
 	"github.com/stretchr/testify/assert"
 )
@@ -35,7 +36,7 @@ func TestRegister_Success(t *testing.T) {
 	}
 	svc := NewService(repo, tokenConfig())
 
-	resp, err := svc.Register(context.Background(), RegisterRequest{
+	resp, err := svc.Register(context.Background(), authdto.RegisterRequest{
 		Email: "test@example.com", Password: "password123",
 		Name: "Test", Role: "applicant",
 	})
@@ -53,7 +54,7 @@ func TestRegister_DuplicateEmail(t *testing.T) {
 	}
 	svc := NewService(repo, tokenConfig())
 
-	_, err := svc.Register(context.Background(), RegisterRequest{
+	_, err := svc.Register(context.Background(), authdto.RegisterRequest{
 		Email: "dup@example.com", Password: "password123",
 		Name: "Dup", Role: "applicant",
 	})
@@ -72,7 +73,7 @@ func TestLogin_Success(t *testing.T) {
 	}
 	svc := NewService(repo, tokenConfig())
 
-	resp, err := svc.Login(context.Background(), LoginRequest{
+	resp, err := svc.Login(context.Background(), authdto.LoginRequest{
 		Email: "test@example.com", Password: "correct-password",
 	})
 
@@ -91,7 +92,7 @@ func TestLogin_WrongPassword(t *testing.T) {
 	}
 	svc := NewService(repo, tokenConfig())
 
-	_, err := svc.Login(context.Background(), LoginRequest{
+	_, err := svc.Login(context.Background(), authdto.LoginRequest{
 		Email: "test@example.com", Password: "wrong-password",
 	})
 
@@ -108,7 +109,7 @@ func TestLogin_InactiveUser(t *testing.T) {
 	}
 	svc := NewService(repo, tokenConfig())
 
-	_, err := svc.Login(context.Background(), LoginRequest{
+	_, err := svc.Login(context.Background(), authdto.LoginRequest{
 		Email: "test@example.com", Password: "any-password",
 	})
 
@@ -123,7 +124,7 @@ func TestLogin_UserNotFound(t *testing.T) {
 	}
 	svc := NewService(repo, tokenConfig())
 
-	_, err := svc.Login(context.Background(), LoginRequest{
+	_, err := svc.Login(context.Background(), authdto.LoginRequest{
 		Email: "nonexistent@example.com", Password: "any-password",
 	})
 
@@ -147,7 +148,7 @@ func TestRefreshToken_Valid(t *testing.T) {
 	}
 	refreshToken, _ := jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString([]byte(tokenConfig().Secret))
 
-	resp, err := svc.RefreshToken(context.Background(), RefreshRequest{RefreshToken: refreshToken})
+	resp, err := svc.RefreshToken(context.Background(), authdto.RefreshRequest{RefreshToken: refreshToken})
 
 	assert.NoError(t, err)
 	assert.NotEmpty(t, resp.AccessToken)
@@ -165,7 +166,7 @@ func TestRefreshToken_Expired(t *testing.T) {
 	}
 	refreshToken, _ := jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString([]byte(tokenConfig().Secret))
 
-	_, err := svc.RefreshToken(context.Background(), RefreshRequest{RefreshToken: refreshToken})
+	_, err := svc.RefreshToken(context.Background(), authdto.RefreshRequest{RefreshToken: refreshToken})
 
 	assert.ErrorIs(t, err, ErrInvalidToken)
 }
@@ -182,7 +183,7 @@ func TestRefreshToken_WrongType(t *testing.T) {
 	}
 	refreshToken, _ := jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString([]byte(tokenConfig().Secret))
 
-	_, err := svc.RefreshToken(context.Background(), RefreshRequest{RefreshToken: refreshToken})
+	_, err := svc.RefreshToken(context.Background(), authdto.RefreshRequest{RefreshToken: refreshToken})
 
 	assert.ErrorIs(t, err, ErrInvalidToken)
 }

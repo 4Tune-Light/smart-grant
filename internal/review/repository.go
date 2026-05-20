@@ -2,23 +2,10 @@ package review
 
 import (
 	"context"
-	"time"
 
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/rizky/smart-grant/pkg/database"
 )
-
-type Review struct {
-	ID           string    `json:"id"`
-	ProposalID   string    `json:"proposal_id"`
-	ReviewerID   string    `json:"reviewer_id"`
-	ReviewerName string    `json:"reviewer_name"`
-	Score        int       `json:"score"`
-	Comment      string    `json:"comment"`
-	Status       string    `json:"status"`
-	CreatedAt    time.Time `json:"created_at"`
-	UpdatedAt    time.Time `json:"updated_at"`
-}
 
 type Repository interface {
 	Create(ctx context.Context, r *Review) error
@@ -28,11 +15,11 @@ type Repository interface {
 }
 
 type repository struct {
-	pool *pgxpool.Pool
+	q *database.Querier
 }
 
-func NewRepository(pool *pgxpool.Pool) Repository {
-	return &repository{pool: pool}
+func NewRepository(q *database.Querier) Repository {
+	return &repository{q: q}
 }
 
 func (r *repository) Create(ctx context.Context, rev *Review) error {
@@ -41,7 +28,7 @@ func (r *repository) Create(ctx context.Context, rev *Review) error {
 		VALUES ($1, $2, $3, $4)
 		RETURNING id, created_at, updated_at`
 
-	return r.pool.QueryRow(ctx, query,
+	return r.q.QueryRow(ctx, query,
 		rev.ProposalID, rev.ReviewerID, rev.Score, rev.Comment,
 	).Scan(&rev.ID, &rev.CreatedAt, &rev.UpdatedAt)
 }
@@ -53,7 +40,7 @@ func (r *repository) FindByProposalAndReviewer(ctx context.Context, proposalID s
 		FROM reviews WHERE proposal_id = $1 AND reviewer_id = $2`
 
 	rev := &Review{}
-	err := r.pool.QueryRow(ctx, query, proposalID, reviewerID).Scan(
+	err := r.q.QueryRow(ctx, query, proposalID, reviewerID).Scan(
 		&rev.ID, &rev.ProposalID, &rev.ReviewerID, &rev.ReviewerName,
 		&rev.Score, &rev.Comment, &rev.Status, &rev.CreatedAt, &rev.UpdatedAt,
 	)
@@ -75,7 +62,7 @@ func (r *repository) FindByProposalID(ctx context.Context, proposalID string) ([
 		WHERE r.proposal_id = $1
 		ORDER BY r.created_at DESC`
 
-	rows, err := r.pool.Query(ctx, query, proposalID)
+	rows, err := r.q.Query(ctx, query, proposalID)
 	if err != nil {
 		return nil, err
 	}
@@ -97,6 +84,6 @@ func (r *repository) FindByProposalID(ctx context.Context, proposalID string) ([
 
 func (r *repository) UpdateProposalStatus(ctx context.Context, proposalID string, status string) error {
 	query := `UPDATE proposals SET status = $1, updated_at = now() WHERE id = $2`
-	_, err := r.pool.Exec(ctx, query, status, proposalID)
+	_, err := r.q.Exec(ctx, query, status, proposalID)
 	return err
 }

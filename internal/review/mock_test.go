@@ -9,7 +9,8 @@ import (
 	"github.com/rizky/smart-grant/pkg/cursor"
 
 	"github.com/rizky/smart-grant/internal/audit"
-	"github.com/rizky/smart-grant/internal/notification"
+	auditdto "github.com/rizky/smart-grant/internal/audit/dto"
+	notificationdto "github.com/rizky/smart-grant/internal/notification/dto"
 )
 
 type mockRepository struct {
@@ -46,7 +47,7 @@ func (m *mockProposalRepo) FindByID(ctx context.Context, id string) (*proposal.P
 	return &proposal.Proposal{
 		ID: id, Title: "Test", Description: "Test",
 		NominalAmount: 500000000, Organization: "Org",
-		Status: "submitted", CreatedAt: time.Now(), UpdatedAt: time.Now(),
+		Status: proposal.StatusSubmitted, CreatedAt: time.Now(), UpdatedAt: time.Now(),
 	}, nil
 }
 func (m *mockProposalRepo) ListByApplicant(ctx context.Context, applicantID string, status string, limit int, c *cursor.Cursor) ([]proposal.Proposal, *cursor.Cursor, error) { return nil, nil, nil }
@@ -62,11 +63,11 @@ func (m *mockProposalRepo) CountDocuments(ctx context.Context, proposalID string
 type mockAudit struct{}
 
 func (m *mockAudit) Log(ctx context.Context, entry audit.LogEntry) error { return nil }
-func (m *mockAudit) List(ctx context.Context, filter audit.AuditFilter) ([]audit.AuditResponse, *cursor.Cursor, error) { return nil, nil, nil }
+func (m *mockAudit) List(ctx context.Context, filter audit.AuditFilter) ([]auditdto.AuditResponse, *cursor.Cursor, error) { return nil, nil, nil }
 
 type mockNotif struct{}
 
 func (m *mockNotif) Send(ctx context.Context, userID string, notifType string, title string, body string) error { return nil }
-func (m *mockNotif) List(ctx context.Context, limit int, c *cursor.Cursor) ([]notification.NotificationResponse, *cursor.Cursor, error) { return nil, nil, nil }
+func (m *mockNotif) List(ctx context.Context, limit int, c *cursor.Cursor) ([]notificationdto.NotificationResponse, *cursor.Cursor, error) { return nil, nil, nil }
 func (m *mockNotif) MarkRead(ctx context.Context, notificationID string) error { return nil }
-func (m *mockNotif) Subscribe(ctx context.Context) (<-chan notification.NotificationEvent, error) { return nil, nil }
+func (m *mockNotif) Subscribe(ctx context.Context) (<-chan notificationdto.NotificationEvent, error) { return nil, nil }

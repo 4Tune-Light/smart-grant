@@ -2,22 +2,10 @@ package risk
 
 import (
 	"context"
-	"time"
 
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/rizky/smart-grant/pkg/database"
 )
-
-type RiskScore struct {
-	ID           string
-	ProposalID   string
-	RiskLevel    string
-	Confidence   float64
-	Features     string
-	Details      string
-	ModelVersion string
-	CreatedAt    time.Time
-}
 
 type Repository interface {
 	Save(ctx context.Context, score *RiskScore) error
@@ -26,11 +14,11 @@ type Repository interface {
 }
 
 type repository struct {
-	pool *pgxpool.Pool
+	q *database.Querier
 }
 
-func NewRepository(pool *pgxpool.Pool) Repository {
-	return &repository{pool: pool}
+func NewRepository(q *database.Querier) Repository {
+	return &repository{q: q}
 }
 
 func (r *repository) Save(ctx context.Context, score *RiskScore) error {
@@ -39,7 +27,7 @@ func (r *repository) Save(ctx context.Context, score *RiskScore) error {
 		VALUES ($1, $2, $3, $4, $5, $6)
 		RETURNING id, created_at`
 
-	return r.pool.QueryRow(ctx, query,
+	return r.q.QueryRow(ctx, query,
 		score.ProposalID, score.RiskLevel, score.Confidence,
 		score.Features, score.Details, score.ModelVersion,
 	).Scan(&score.ID, &score.CreatedAt)
@@ -51,7 +39,7 @@ func (r *repository) FindByProposalID(ctx context.Context, proposalID string) (*
 		FROM risk_scores WHERE proposal_id = $1`
 
 	score := &RiskScore{}
-	err := r.pool.QueryRow(ctx, query, proposalID).Scan(
+	err := r.q.QueryRow(ctx, query, proposalID).Scan(
 		&score.ID, &score.ProposalID, &score.RiskLevel, &score.Confidence,
 		&score.Features, &score.Details, &score.ModelVersion, &score.CreatedAt,
 	)
@@ -66,7 +54,7 @@ func (r *repository) FindByProposalID(ctx context.Context, proposalID string) (*
 
 func (r *repository) FindAll(ctx context.Context) ([]RiskScore, error) {
 	query := `SELECT id, proposal_id, risk_level, confidence, features, details, model_version, created_at FROM risk_scores ORDER BY created_at DESC`
-	rows, err := r.pool.Query(ctx, query)
+	rows, err := r.q.Query(ctx, query)
 	if err != nil {
 		return nil, err
 	}

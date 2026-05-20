@@ -6,7 +6,8 @@ import (
 	"time"
 
 	"github.com/rizky/smart-grant/internal/audit"
-	"github.com/rizky/smart-grant/internal/notification"
+	auditdto "github.com/rizky/smart-grant/internal/audit/dto"
+	notificationdto "github.com/rizky/smart-grant/internal/notification/dto"
 	"github.com/rizky/smart-grant/pkg/cursor"
 )
 
@@ -43,14 +44,14 @@ func (m *mockStorage) Upload(ctx context.Context, objectPath string, reader io.R
 type mockAudit struct{}
 
 func (m *mockAudit) Log(ctx context.Context, entry audit.LogEntry) error { return nil }
-func (m *mockAudit) List(ctx context.Context, filter audit.AuditFilter) ([]audit.AuditResponse, *cursor.Cursor, error) { return nil, nil, nil }
+func (m *mockAudit) List(ctx context.Context, filter audit.AuditFilter) ([]auditdto.AuditResponse, *cursor.Cursor, error) { return nil, nil, nil }
 
 type mockNotif struct{}
 
 func (m *mockNotif) Send(ctx context.Context, userID string, notifType string, title string, body string) error { return nil }
-func (m *mockNotif) List(ctx context.Context, limit int, c *cursor.Cursor) ([]notification.NotificationResponse, *cursor.Cursor, error) { return nil, nil, nil }
+func (m *mockNotif) List(ctx context.Context, limit int, c *cursor.Cursor) ([]notificationdto.NotificationResponse, *cursor.Cursor, error) { return nil, nil, nil }
 func (m *mockNotif) MarkRead(ctx context.Context, notificationID string) error { return nil }
-func (m *mockNotif) Subscribe(ctx context.Context) (<-chan notification.NotificationEvent, error) { return nil, nil }
+func (m *mockNotif) Subscribe(ctx context.Context) (<-chan notificationdto.NotificationEvent, error) { return nil, nil }
 
 func testProposal(id, applicantID string) *Proposal {
 	return &Proposal{
@@ -60,7 +61,7 @@ func testProposal(id, applicantID string) *Proposal {
 		Description:   "A test proposal for testing",
 		NominalAmount: 500000000,
 		Organization:  "Test Org",
-		Status:        "draft",
+		Status:        StatusDraft,
 		Version:       1,
 		CreatedAt:     time.Now(),
 		UpdatedAt:     time.Now(),

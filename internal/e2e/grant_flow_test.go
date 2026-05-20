@@ -8,11 +8,15 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/rizky/smart-grant/internal/audit"
 	"github.com/rizky/smart-grant/internal/auth"
+	authdto "github.com/rizky/smart-grant/internal/auth/dto"
 	"github.com/rizky/smart-grant/internal/middleware"
 	"github.com/rizky/smart-grant/internal/notification"
 	"github.com/rizky/smart-grant/internal/proposal"
+	proposaldto "github.com/rizky/smart-grant/internal/proposal/dto"
 	"github.com/rizky/smart-grant/internal/review"
+	reviewdto "github.com/rizky/smart-grant/internal/review/dto"
 	"github.com/rizky/smart-grant/internal/risk"
+	"github.com/rizky/smart-grant/pkg/database"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/testcontainers/testcontainers-go"
@@ -68,43 +72,43 @@ func TestE2E_GrantFlow(t *testing.T) {
 	reviewerCtx := withUser(ctx, "reviewer-1", "reviewer")
 	adminCtx := withUser(ctx, "admin-1", "admin")
 
-	regResp, err := deps.authSvc.Register(ctx, auth.RegisterRequest{
+	regResp, err := deps.authSvc.Register(ctx, authdto.RegisterRequest{
 		Email: "applicant@test.com", Password: "password123",
 		Name: "Test Applicant", Role: "applicant",
 	})
 	require.NoError(t, err)
 	assert.NotEmpty(t, regResp.AccessToken)
 
-	loginResp, err := deps.authSvc.Login(ctx, auth.LoginRequest{
+	loginResp, err := deps.authSvc.Login(ctx, authdto.LoginRequest{
 		Email: "applicant@test.com", Password: "password123",
 	})
 	require.NoError(t, err)
 	assert.NotEmpty(t, loginResp.AccessToken)
 
-	prop, err := deps.proposalSvc.Create(applicantCtx, proposal.CreateProposalRequest{
+	prop, err := deps.proposalSvc.Create(applicantCtx, proposaldto.CreateProposalRequest{
 		Title: "Research Grant", Description: "Funding for AI research project",
 		NominalAmount: 500000000, Organization: "AI Lab",
 	})
 	require.NoError(t, err)
-	assert.Equal(t, "draft", prop.Status)
+	assert.Equal(t, string(proposal.StatusDraft), prop.Status)
 
 	prop, err = deps.proposalSvc.Submit(applicantCtx, prop.ID)
 	require.NoError(t, err)
-	assert.Equal(t, "submitted", prop.Status)
+	assert.Equal(t, string(proposal.StatusSubmitted), prop.Status)
 
-	_, err = deps.authSvc.Register(ctx, auth.RegisterRequest{
+	_, err = deps.authSvc.Register(ctx, authdto.RegisterRequest{
 		Email: "reviewer@test.com", Password: "password123",
 		Name: "Test Reviewer", Role: "reviewer",
 	})
 	require.NoError(t, err)
 
-	_, err = deps.authSvc.Register(ctx, auth.RegisterRequest{
+	_, err = deps.authSvc.Register(ctx, authdto.RegisterRequest{
 		Email: "admin@test.com", Password: "password123",
 		Name: "Test Admin", Role: "admin",
 	})
 	require.NoError(t, err)
 
-	reviewResp, err := deps.reviewSvc.Create(reviewerCtx, prop.ID, review.CreateReviewRequest{
+	reviewResp, err := deps.reviewSvc.Create(reviewerCtx, prop.ID, reviewdto.CreateReviewRequest{
 		Score: 85, Comment: "Well-structured proposal with clear objectives",
 	})
 	require.NoError(t, err)
@@ -116,7 +120,7 @@ func TestE2E_GrantFlow(t *testing.T) {
 
 	approveResp, err := deps.reviewSvc.Approve(adminCtx, prop.ID)
 	require.NoError(t, err)
-	assert.Equal(t, "approved", approveResp.Status)
+	assert.Equal(t, string(proposal.StatusApproved), approveResp.Status)
 
 	auditEntries, _, err := deps.auditSvc.List(ctx, audit.AuditFilter{
 		EntityType: "proposal", EntityID: prop.ID, Limit: 10,
@@ -133,24 +137,26 @@ func withUser(ctx context.Context, userID, role string) context.Context {
 }
 
 func newDeps(pool *pgxpool.Pool) *e2eDeps {
-	authRepo := auth.NewRepository(pool)
+	q := database.NewQuerier(pool)
+	authRepo := auth.NewRepository(q)
 	authSvc := auth.NewService(authRepo, auth.TokenConfig{
 		Secret: "test-secret-that-is-at-least-32-bytes-long!!",
 		AccessTTL: 15 * time.Minute,
 		RefreshTTL: 72 * time.Hour,
 	})
 
-	proposalRepo := proposal.NewRepository(pool)
-	notifRepo := notification.NewRepository(pool)
+	proposalRepo := proposal.NewRepository(q)
+	notifRepo := notification.NewRepository(q)
 	notifSvc := notification.NewService(notifRepo, nil)
-	auditRepo := audit.NewRepository(pool)
+	auditRepo := audit.NewRepository(q)
 	auditSvc := audit.NewService(auditRepo)
-	proposalSvc := proposal.NewService(proposalRepo, nil, auditSvc, notifSvc)
+	tx := database.NewTransactor(pool)
+	proposalSvc := proposal.NewService(proposalRepo, nil, auditSvc, notifSvc, tx)
 
-	reviewRepo := review.NewRepository(pool)
-	reviewSvc := review.NewService(reviewRepo, proposalRepo, auditSvc, notifSvc)
+	reviewRepo := review.NewRepository(q)
+	reviewSvc := review.NewService(reviewRepo, proposalRepo, auditSvc, notifSvc, tx)
 
-	riskRepo := risk.NewRepository(pool)
+	riskRepo := risk.NewRepository(q)
 	riskSvc := risk.NewService(riskRepo, proposalRepo)
 
 	return &e2eDeps{

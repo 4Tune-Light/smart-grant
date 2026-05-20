@@ -3,22 +3,10 @@ package auth
 import (
 	"context"
 	"errors"
-	"time"
 
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/rizky/smart-grant/pkg/database"
 )
-
-type User struct {
-	ID           string    `json:"id"`
-	Email        string    `json:"email"`
-	PasswordHash string    `json:"-"`
-	Name         string    `json:"name"`
-	Role         string    `json:"role"`
-	IsActive     bool      `json:"is_active"`
-	CreatedAt    time.Time `json:"created_at"`
-	UpdatedAt    time.Time `json:"updated_at"`
-}
 
 type Repository interface {
 	Create(ctx context.Context, user *User) error
@@ -29,11 +17,11 @@ type Repository interface {
 }
 
 type repository struct {
-	pool *pgxpool.Pool
+	q *database.Querier
 }
 
-func NewRepository(pool *pgxpool.Pool) Repository {
-	return &repository{pool: pool}
+func NewRepository(q *database.Querier) Repository {
+	return &repository{q: q}
 }
 
 func (r *repository) Create(ctx context.Context, user *User) error {
@@ -42,7 +30,7 @@ func (r *repository) Create(ctx context.Context, user *User) error {
 		VALUES ($1, $2, $3, $4)
 		RETURNING id, created_at, updated_at`
 
-	err := r.pool.QueryRow(ctx, query,
+	err := r.q.QueryRow(ctx, query,
 		user.Email, user.PasswordHash, user.Name, user.Role,
 	).Scan(&user.ID, &user.CreatedAt, &user.UpdatedAt)
 	if err != nil {
@@ -62,7 +50,7 @@ func (r *repository) FindByEmail(ctx context.Context, email string) (*User, erro
 		FROM users WHERE email = $1`
 
 	user := &User{}
-	err := r.pool.QueryRow(ctx, query, email).Scan(
+	err := r.q.QueryRow(ctx, query, email).Scan(
 		&user.ID, &user.Email, &user.PasswordHash,
 		&user.Name, &user.Role, &user.IsActive,
 		&user.CreatedAt, &user.UpdatedAt,
@@ -83,7 +71,7 @@ func (r *repository) FindByID(ctx context.Context, id string) (*User, error) {
 		FROM users WHERE id = $1`
 
 	user := &User{}
-	err := r.pool.QueryRow(ctx, query, id).Scan(
+	err := r.q.QueryRow(ctx, query, id).Scan(
 		&user.ID, &user.Email, &user.PasswordHash,
 		&user.Name, &user.Role, &user.IsActive,
 		&user.CreatedAt, &user.UpdatedAt,
@@ -111,11 +99,11 @@ func (r *repository) ListAll(ctx context.Context, role string, limit int, offset
 
 	var total int
 	if len(args) > 0 {
-		if err := r.pool.QueryRow(ctx, countQuery, args...).Scan(&total); err != nil {
+		if err := r.q.QueryRow(ctx, countQuery, args...).Scan(&total); err != nil {
 			return nil, 0, err
 		}
 	} else {
-		if err := r.pool.QueryRow(ctx, countQuery).Scan(&total); err != nil {
+		if err := r.q.QueryRow(ctx, countQuery).Scan(&total); err != nil {
 			return nil, 0, err
 		}
 	}
@@ -128,7 +116,7 @@ func (r *repository) ListAll(ctx context.Context, role string, limit int, offset
 		args = append(args, limit, offset)
 	}
 
-	rows, err := r.pool.Query(ctx, query, args...)
+	rows, err := r.q.Query(ctx, query, args...)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -148,7 +136,7 @@ func (r *repository) ListAll(ctx context.Context, role string, limit int, offset
 
 func (r *repository) UpdateRole(ctx context.Context, id string, role string) error {
 	query := `UPDATE users SET role = $1, updated_at = now() WHERE id = $2`
-	result, err := r.pool.Exec(ctx, query, role, id)
+	result, err := r.q.Exec(ctx, query, role, id)
 	if err != nil {
 		return err
 	}

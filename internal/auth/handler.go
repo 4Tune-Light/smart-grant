@@ -7,6 +7,7 @@ import (
 	"strconv"
 
 	"github.com/go-chi/chi/v5"
+	authdto "github.com/rizky/smart-grant/internal/auth/dto"
 	"github.com/rizky/smart-grant/pkg/response"
 	"github.com/rizky/smart-grant/pkg/validator"
 )
@@ -20,7 +21,7 @@ func NewHandler(svc Service) *Handler {
 }
 
 func (h *Handler) Register(w http.ResponseWriter, r *http.Request) {
-	var req RegisterRequest
+	var req authdto.RegisterRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		response.Error(w, http.StatusBadRequest, "invalid_request", "invalid request body")
 		return
@@ -41,7 +42,7 @@ func (h *Handler) Register(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
-	var req LoginRequest
+	var req authdto.LoginRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		response.Error(w, http.StatusBadRequest, "invalid_request", "invalid request body")
 		return
@@ -62,7 +63,7 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) RefreshToken(w http.ResponseWriter, r *http.Request) {
-	var req RefreshRequest
+	var req authdto.RefreshRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		response.Error(w, http.StatusBadRequest, "invalid_request", "invalid request body")
 		return
@@ -105,7 +106,7 @@ func (h *Handler) ListUsers(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) UpdateRole(w http.ResponseWriter, r *http.Request) {
 	targetID := chi.URLParam(r, "id")
 
-	var req UpdateRoleRequest
+	var req authdto.UpdateRoleRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		response.Error(w, http.StatusBadRequest, "invalid_request", "invalid request body")
 		return

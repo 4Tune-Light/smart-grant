@@ -3,22 +3,10 @@ package audit
 import (
 	"context"
 	"fmt"
-	"time"
 
-	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/rizky/smart-grant/pkg/cursor"
+	"github.com/rizky/smart-grant/pkg/database"
 )
-
-type Audit struct {
-	ID         string
-	EntityType string
-	EntityID   string
-	Action     string
-	ActorID    string
-	OldValues  string
-	NewValues  string
-	CreatedAt  time.Time
-}
 
 type Repository interface {
 	Insert(ctx context.Context, entry *Audit) error
@@ -26,11 +14,11 @@ type Repository interface {
 }
 
 type repository struct {
-	pool *pgxpool.Pool
+	q *database.Querier
 }
 
-func NewRepository(pool *pgxpool.Pool) Repository {
-	return &repository{pool: pool}
+func NewRepository(q *database.Querier) Repository {
+	return &repository{q: q}
 }
 
 func (r *repository) Insert(ctx context.Context, entry *Audit) error {
@@ -39,7 +27,7 @@ func (r *repository) Insert(ctx context.Context, entry *Audit) error {
 		VALUES ($1, $2, $3, $4, $5, $6)
 		RETURNING id, created_at`
 
-	return r.pool.QueryRow(ctx, query,
+	return r.q.QueryRow(ctx, query,
 		entry.EntityType, entry.EntityID, entry.Action, entry.ActorID,
 		nullIfEmpty(entry.OldValues), nullIfEmpty(entry.NewValues),
 	).Scan(&entry.ID, &entry.CreatedAt)
@@ -100,7 +88,7 @@ func (r *repository) List(ctx context.Context, filter AuditFilter) ([]Audit, *cu
 	query += fmt.Sprintf(" ORDER BY created_at DESC, id DESC LIMIT $%d", argIdx)
 	args = append(args, filter.Limit+1)
 
-	rows, err := r.pool.Query(ctx, query, args...)
+	rows, err := r.q.Query(ctx, query, args...)
 	if err != nil {
 		return nil, nil, err
 	}

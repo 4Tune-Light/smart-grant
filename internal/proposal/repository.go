@@ -7,40 +7,9 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/rizky/smart-grant/pkg/cursor"
+	"github.com/rizky/smart-grant/pkg/database"
 )
-
-type Proposal struct {
-	ID            string    `json:"id"`
-	ApplicantID   string    `json:"applicant_id"`
-	Title         string    `json:"title"`
-	Description   string    `json:"description"`
-	NominalAmount float64   `json:"nominal_amount"`
-	Organization  string    `json:"organization"`
-	Status        string    `json:"status"`
-	Version       int       `json:"version"`
-	CreatedAt     time.Time `json:"created_at"`
-	UpdatedAt     time.Time `json:"updated_at"`
-}
-
-type Document struct {
-	ID         string    `json:"id"`
-	ProposalID string    `json:"proposal_id"`
-	Filename   string    `json:"filename"`
-	FileURL   string    `json:"file_url"`
-	MimeType   string    `json:"mime_type"`
-	FileSize   int64     `json:"file_size"`
-	UploadedAt time.Time `json:"uploaded_at"`
-}
-
-type ProposalVersion struct {
-	ID            string    `json:"id"`
-	ProposalID    string    `json:"proposal_id"`
-	VersionNumber int       `json:"version_number"`
-	Snapshot      string    `json:"snapshot"`
-	CreatedAt     time.Time `json:"created_at"`
-}
 
 type Repository interface {
 	Create(ctx context.Context, p *Proposal) error
@@ -58,11 +27,11 @@ type Repository interface {
 }
 
 type repository struct {
-	pool *pgxpool.Pool
+	q *database.Querier
 }
 
-func NewRepository(pool *pgxpool.Pool) Repository {
-	return &repository{pool: pool}
+func NewRepository(q *database.Querier) Repository {
+	return &repository{q: q}
 }
 
 func (r *repository) Create(ctx context.Context, p *Proposal) error {
@@ -71,7 +40,7 @@ func (r *repository) Create(ctx context.Context, p *Proposal) error {
 		VALUES ($1, $2, $3, $4, $5, $6, $7)
 		RETURNING id, created_at, updated_at`
 
-	return r.pool.QueryRow(ctx, query,
+	return r.q.QueryRow(ctx, query,
 		p.ApplicantID, p.Title, p.Description, p.NominalAmount,
 		p.Organization, p.Status, p.Version,
 	).Scan(&p.ID, &p.CreatedAt, &p.UpdatedAt)
@@ -84,7 +53,7 @@ func (r *repository) Update(ctx context.Context, p *Proposal) error {
 		    organization = $4, status = $5, version = $6, updated_at = now()
 		WHERE id = $7 AND applicant_id = $8`
 
-	result, err := r.pool.Exec(ctx, query,
+	result, err := r.q.Exec(ctx, query,
 		p.Title, p.Description, p.NominalAmount,
 		p.Organization, p.Status, p.Version,
 		p.ID, p.ApplicantID,
@@ -105,7 +74,7 @@ func (r *repository) FindByID(ctx context.Context, id string) (*Proposal, error)
 		FROM proposals WHERE id = $1`
 
 	p := &Proposal{}
-	err := r.pool.QueryRow(ctx, query, id).Scan(
+	err := r.q.QueryRow(ctx, query, id).Scan(
 		&p.ID, &p.ApplicantID, &p.Title, &p.Description, &p.NominalAmount,
 		&p.Organization, &p.Status, &p.Version, &p.CreatedAt, &p.UpdatedAt,
 	)
@@ -142,7 +111,7 @@ func (r *repository) ListByApplicant(ctx context.Context, applicantID string, st
 	query += fmt.Sprintf(` ORDER BY created_at DESC, id DESC LIMIT $%d`, argIdx)
 	args = append(args, limit+1)
 
-	rows, err := r.pool.Query(ctx, query, args...)
+	rows, err := r.q.Query(ctx, query, args...)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -199,7 +168,7 @@ func (r *repository) ListAll(ctx context.Context, status string, limit int, c *c
 	query += fmt.Sprintf(` ORDER BY created_at DESC, id DESC LIMIT $%d`, argIdx)
 	args = append(args, limit+1)
 
-	rows, err := r.pool.Query(ctx, query, args...)
+	rows, err := r.q.Query(ctx, query, args...)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -239,7 +208,7 @@ func (r *repository) ListByApplicantPage(ctx context.Context, applicantID string
 	}
 
 	var total int
-	if err := r.pool.QueryRow(ctx, countQuery, countArgs...).Scan(&total); err != nil {
+	if err := r.q.QueryRow(ctx, countQuery, countArgs...).Scan(&total); err != nil {
 		return nil, 0, err
 	}
 
@@ -256,7 +225,7 @@ func (r *repository) ListByApplicantPage(ctx context.Context, applicantID string
 
 	query += ` ORDER BY created_at DESC LIMIT ` + strconv.Itoa(limit) + ` OFFSET ` + strconv.Itoa(offset)
 
-	rows, err := r.pool.Query(ctx, query, args...)
+	rows, err := r.q.Query(ctx, query, args...)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -287,11 +256,11 @@ func (r *repository) ListAllPage(ctx context.Context, status string, limit int, 
 
 	var total int
 	if status != "" {
-		if err := r.pool.QueryRow(ctx, countQuery, status).Scan(&total); err != nil {
+		if err := r.q.QueryRow(ctx, countQuery, status).Scan(&total); err != nil {
 			return nil, 0, err
 		}
 	} else {
-		if err := r.pool.QueryRow(ctx, countQuery).Scan(&total); err != nil {
+		if err := r.q.QueryRow(ctx, countQuery).Scan(&total); err != nil {
 			return nil, 0, err
 		}
 	}
@@ -309,7 +278,7 @@ func (r *repository) ListAllPage(ctx context.Context, status string, limit int, 
 
 	query += ` ORDER BY created_at DESC LIMIT ` + strconv.Itoa(limit) + ` OFFSET ` + strconv.Itoa(offset)
 
-	rows, err := r.pool.Query(ctx, query, args...)
+	rows, err := r.q.Query(ctx, query, args...)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -334,7 +303,7 @@ func (r *repository) CreateVersion(ctx context.Context, proposalID string, versi
 	query := `
 		INSERT INTO proposal_versions (proposal_id, version_number, snapshot)
 		VALUES ($1, $2, $3)`
-	_, err := r.pool.Exec(ctx, query, proposalID, versionNumber, snapshot)
+	_, err := r.q.Exec(ctx, query, proposalID, versionNumber, snapshot)
 	return err
 }
 
@@ -344,7 +313,7 @@ func (r *repository) CreateDocument(ctx context.Context, d *Document) error {
 		VALUES ($1, $2, $3, $4, $5)
 		RETURNING id, uploaded_at`
 
-	return r.pool.QueryRow(ctx, query,
+	return r.q.QueryRow(ctx, query,
 		d.ProposalID, d.Filename, d.FileURL, d.MimeType, d.FileSize,
 	).Scan(&d.ID, &d.UploadedAt)
 }
@@ -355,7 +324,7 @@ func (r *repository) FindDocuments(ctx context.Context, proposalID string) ([]Do
 		FROM proposal_documents WHERE proposal_id = $1
 		ORDER BY uploaded_at DESC`
 
-	rows, err := r.pool.Query(ctx, query, proposalID)
+	rows, err := r.q.Query(ctx, query, proposalID)
 	if err != nil {
 		return nil, err
 	}
@@ -376,14 +345,14 @@ func (r *repository) FindDocuments(ctx context.Context, proposalID string) ([]Do
 func (r *repository) CountByOrganization(ctx context.Context, organization string, since time.Time) (int, error) {
 	query := `SELECT COUNT(*) FROM proposals WHERE organization = $1 AND created_at >= $2`
 	var count int
-	err := r.pool.QueryRow(ctx, query, organization, since).Scan(&count)
+	err := r.q.QueryRow(ctx, query, organization, since).Scan(&count)
 	return count, err
 }
 
 func (r *repository) CountDocuments(ctx context.Context, proposalID string) (int, error) {
 	query := `SELECT COUNT(*) FROM proposal_documents WHERE proposal_id = $1`
 	var count int
-	err := r.pool.QueryRow(ctx, query, proposalID).Scan(&count)
+	err := r.q.QueryRow(ctx, query, proposalID).Scan(&count)
 	return count, err
 }
 

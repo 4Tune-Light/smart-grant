@@ -1,11 +1,6 @@
-package review
+package dto
 
 import "time"
-
-type CreateReviewRequest struct {
-	Score   int    `json:"score"   validate:"required,gte=0,lte=100"`
-	Comment string `json:"comment" validate:"required,min=10,max=1000"`
-}
 
 type ReviewResponse struct {
 	ID           string    `json:"id"`

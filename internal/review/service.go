@@ -11,13 +11,15 @@ import (
 	"github.com/rizky/smart-grant/internal/middleware"
 	"github.com/rizky/smart-grant/internal/notification"
 	"github.com/rizky/smart-grant/internal/proposal"
+	"github.com/rizky/smart-grant/pkg/database"
+	reviewdto "github.com/rizky/smart-grant/internal/review/dto"
 )
 
 type Service interface {
-	Create(ctx context.Context, proposalID string, req CreateReviewRequest) (*ReviewResponse, error)
-	GetByProposal(ctx context.Context, proposalID string) ([]ReviewResponse, error)
-	Approve(ctx context.Context, proposalID string) (*ReviewResponse, error)
-	Reject(ctx context.Context, proposalID string) (*ReviewResponse, error)
+	Create(ctx context.Context, proposalID string, req reviewdto.CreateReviewRequest) (*reviewdto.ReviewResponse, error)
+	GetByProposal(ctx context.Context, proposalID string) ([]reviewdto.ReviewResponse, error)
+	Approve(ctx context.Context, proposalID string) (*reviewdto.ReviewResponse, error)
+	Reject(ctx context.Context, proposalID string) (*reviewdto.ReviewResponse, error)
 }
 
 type service struct {
@@ -25,13 +27,14 @@ type service struct {
 	proposalRepo proposal.Repository
 	audit        audit.Service
 	notif        notification.Service
+	tx           *database.Transactor
 }
 
-func NewService(repo Repository, proposalRepo proposal.Repository, a audit.Service, n notification.Service) Service {
-	return &service{repo: repo, proposalRepo: proposalRepo, audit: a, notif: n}
+func NewService(repo Repository, proposalRepo proposal.Repository, a audit.Service, n notification.Service, tx *database.Transactor) Service {
+	return &service{repo: repo, proposalRepo: proposalRepo, audit: a, notif: n, tx: tx}
 }
 
-func (s *service) Create(ctx context.Context, proposalID string, req CreateReviewRequest) (*ReviewResponse, error) {
+func (s *service) Create(ctx context.Context, proposalID string, req reviewdto.CreateReviewRequest) (*reviewdto.ReviewResponse, error) {
 	ctx, span := otel.Tracer("smart-grant").Start(ctx, "review.Create")
 	defer span.End()
 
@@ -52,7 +55,7 @@ func (s *service) Create(ctx context.Context, proposalID string, req CreateRevie
 		return nil, err
 	}
 
-	if prop.Status != "submitted" {
+	if prop.Status != proposal.StatusSubmitted {
 		return nil, ErrProposalNotReady
 	}
 
@@ -64,40 +67,41 @@ func (s *service) Create(ctx context.Context, proposalID string, req CreateRevie
 		return nil, ErrAlreadyReviewed
 	}
 
-	rev := &Review{
-		ProposalID: proposalID,
-		ReviewerID: userID,
-		Score:      req.Score,
-		Comment:    req.Comment,
-		Status:     "pending",
-	}
+	var resp *reviewdto.ReviewResponse
+	err = s.tx.WithinTransaction(ctx, func(txCtx context.Context) error {
+		rev := &Review{
+			ProposalID: proposalID,
+			ReviewerID: userID,
+			Score:      req.Score,
+			Comment:    req.Comment,
+			Status:     ReviewPending,
+		}
 
-	if err := s.repo.Create(ctx, rev); err != nil {
-		return nil, err
-	}
+		if err := s.repo.Create(txCtx, rev); err != nil {
+			return err
+		}
 
-	status := "in_review"
-	if err := s.repo.UpdateProposalStatus(ctx, proposalID, status); err != nil {
-		return nil, err
-	}
+		status := string(proposal.StatusInReview)
+		if err := s.repo.UpdateProposalStatus(txCtx, proposalID, status); err != nil {
+			return err
+		}
 
-	s.audit.Log(ctx, audit.LogEntry{
-		EntityType: "review",
-		EntityID:   rev.ID,
-		Action:     "create",
-		ActorID:    userID,
-		NewValues:  fmt.Sprintf(`{"proposal_id":"%s","score":%d,"status":"pending"}`, proposalID, req.Score),
+		s.audit.Log(txCtx, audit.LogEntry{
+			EntityType: "review",
+			EntityID:   rev.ID,
+			Action:     "create",
+			ActorID:    userID,
+			NewValues:  fmt.Sprintf(`{"proposal_id":"%s","score":%d,"status":"pending"}`, proposalID, req.Score),
+		})
+
+		resp = toResponse(rev)
+		return nil
 	})
 
-	s.notif.Send(ctx, prop.ApplicantID, "review_received",
-		"Proposal Reviewed",
-		fmt.Sprintf("Your proposal '%s' has been reviewed (score: %d/100)", prop.Title, req.Score),
-	)
-
-	return toResponse(rev), nil
+	return resp, err
 }
 
-func (s *service) GetByProposal(ctx context.Context, proposalID string) ([]ReviewResponse, error) {
+func (s *service) GetByProposal(ctx context.Context, proposalID string) ([]reviewdto.ReviewResponse, error) {
 	role, _ := ctx.Value(middleware.AuthRoleKey).(string)
 	userID, _ := ctx.Value(middleware.AuthUserIDKey).(string)
 
@@ -115,14 +119,14 @@ func (s *service) GetByProposal(ctx context.Context, proposalID string) ([]Revie
 		return nil, err
 	}
 
-	responses := make([]ReviewResponse, len(reviews))
+	responses := make([]reviewdto.ReviewResponse, len(reviews))
 	for i, rev := range reviews {
 		responses[i] = *toResponse(&rev)
 	}
 	return responses, nil
 }
 
-func (s *service) Approve(ctx context.Context, proposalID string) (*ReviewResponse, error) {
+func (s *service) Approve(ctx context.Context, proposalID string) (*reviewdto.ReviewResponse, error) {
 	role, _ := ctx.Value(middleware.AuthRoleKey).(string)
 	userID, _ := ctx.Value(middleware.AuthUserIDKey).(string)
 	if role != "admin" {
@@ -134,11 +138,11 @@ func (s *service) Approve(ctx context.Context, proposalID string) (*ReviewRespon
 		return nil, err
 	}
 
-	if prop.Status == "approved" || prop.Status == "rejected" {
+	if prop.Status == proposal.StatusApproved || prop.Status == proposal.StatusRejected {
 		return nil, ErrProposalAlreadyDecided
 	}
 
-	if err := s.repo.UpdateProposalStatus(ctx, proposalID, "approved"); err != nil {
+	if err := s.repo.UpdateProposalStatus(ctx, proposalID, string(proposal.StatusApproved)); err != nil {
 		return nil, err
 	}
 
@@ -155,13 +159,13 @@ func (s *service) Approve(ctx context.Context, proposalID string) (*ReviewRespon
 		fmt.Sprintf("Your proposal '%s' has been approved.", prop.Title),
 	)
 
-	return &ReviewResponse{
+	return &reviewdto.ReviewResponse{
 		ProposalID: proposalID,
 		Status:     "approved",
 	}, nil
 }
 
-func (s *service) Reject(ctx context.Context, proposalID string) (*ReviewResponse, error) {
+func (s *service) Reject(ctx context.Context, proposalID string) (*reviewdto.ReviewResponse, error) {
 	role, _ := ctx.Value(middleware.AuthRoleKey).(string)
 	userID, _ := ctx.Value(middleware.AuthUserIDKey).(string)
 	if role != "admin" {
@@ -173,11 +177,11 @@ func (s *service) Reject(ctx context.Context, proposalID string) (*ReviewRespons
 		return nil, err
 	}
 
-	if prop.Status == "approved" || prop.Status == "rejected" {
+	if prop.Status == proposal.StatusApproved || prop.Status == proposal.StatusRejected {
 		return nil, ErrProposalAlreadyDecided
 	}
 
-	if err := s.repo.UpdateProposalStatus(ctx, proposalID, "rejected"); err != nil {
+	if err := s.repo.UpdateProposalStatus(ctx, proposalID, string(proposal.StatusRejected)); err != nil {
 		return nil, err
 	}
 
@@ -194,21 +198,21 @@ func (s *service) Reject(ctx context.Context, proposalID string) (*ReviewRespons
 		fmt.Sprintf("Your proposal '%s' has been rejected.", prop.Title),
 	)
 
-	return &ReviewResponse{
+	return &reviewdto.ReviewResponse{
 		ProposalID: proposalID,
 		Status:     "rejected",
 	}, nil
 }
 
-func toResponse(rev *Review) *ReviewResponse {
-	return &ReviewResponse{
+func toResponse(rev *Review) *reviewdto.ReviewResponse {
+	return &reviewdto.ReviewResponse{
 		ID:           rev.ID,
 		ProposalID:   rev.ProposalID,
 		ReviewerID:   rev.ReviewerID,
 		ReviewerName: rev.ReviewerName,
 		Score:        rev.Score,
 		Comment:      rev.Comment,
-		Status:       rev.Status,
+		Status:       string(rev.Status),
 		CreatedAt:    rev.CreatedAt,
 		UpdatedAt:    rev.UpdatedAt,
 	}
