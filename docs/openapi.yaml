@@ -15,6 +15,19 @@ components:
       scheme: bearer
       bearerFormat: JWT
 
+  parameters:
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: false
+      description: |
+        Unique idempotency key for safe retries. 
+        If the same key is sent within 24h, the server returns the cached response.
+        Recommended for POST/PUT/PATCH requests.
+      schema:
+        type: string
+        format: uuid
+
   schemas:
     Error:
       type: object
@@ -151,6 +164,8 @@ paths:
     post:
       summary: Register new user
       tags: [Auth]
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:
         required: true
         content:
@@ -165,6 +180,8 @@ paths:
     post:
       summary: Login
       tags: [Auth]
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:
         required: true
         content:
@@ -178,6 +195,8 @@ paths:
     post:
       summary: Refresh access token
       tags: [Auth]
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:
         required: true
         content:
@@ -231,6 +250,8 @@ paths:
       summary: Create proposal
       tags: [Proposal]
       security: [{ BearerAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:
         required: true
         content:
@@ -256,6 +277,7 @@ paths:
       security: [{ BearerAuth: [] }]
       parameters:
         - { name: id, in: path, required: true, schema: { type: string } }
+        - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:
         content:
           application/json:
@@ -270,6 +292,7 @@ paths:
       security: [{ BearerAuth: [] }]
       parameters:
         - { name: id, in: path, required: true, schema: { type: string } }
+        - $ref: '#/components/parameters/IdempotencyKey'
       responses:
         '200': { description: Proposal submitted }
 
@@ -280,6 +303,7 @@ paths:
       security: [{ BearerAuth: [] }]
       parameters:
         - { name: id, in: path, required: true, schema: { type: string } }
+        - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:
         required: true
         content:
@@ -325,6 +349,7 @@ paths:
       security: [{ BearerAuth: [] }]
       parameters:
         - { name: id, in: path, required: true, schema: { type: string } }
+        - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:
         required: true
         content:
@@ -340,6 +365,7 @@ paths:
       security: [{ BearerAuth: [] }]
       parameters:
         - { name: id, in: path, required: true, schema: { type: string } }
+        - $ref: '#/components/parameters/IdempotencyKey'
       responses:
         '200': { description: Proposal approved }
 
@@ -350,6 +376,7 @@ paths:
       security: [{ BearerAuth: [] }]
       parameters:
         - { name: id, in: path, required: true, schema: { type: string } }
+        - $ref: '#/components/parameters/IdempotencyKey'
       responses:
         '200': { description: Proposal rejected }
 
@@ -360,6 +387,7 @@ paths:
       security: [{ BearerAuth: [] }]
       parameters:
         - { name: id, in: path, required: true, schema: { type: string } }
+        - $ref: '#/components/parameters/IdempotencyKey'
       responses:
         '200': { description: Risk score calculated, content: { application/json: { schema: { $ref: '#/components/schemas/RiskResponse' } } } }
 
@@ -433,6 +461,7 @@ paths:
       security: [{ BearerAuth: [] }]
       parameters:
         - { name: id, in: query, required: true, schema: { type: string } }
+        - $ref: '#/components/parameters/IdempotencyKey'
       responses:
         '200': { description: Marked as read }
 
@@ -455,6 +484,7 @@ paths:
       security: [{ BearerAuth: [] }]
       parameters:
         - { name: id, in: path, required: true, schema: { type: string } }
+        - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:
         required: true
         content:

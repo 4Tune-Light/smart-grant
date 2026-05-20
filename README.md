@@ -5,7 +5,7 @@
 
 [![Go Version](https://img.shields.io/badge/go-1.26-blue)](https://go.dev/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Tests](https://img.shields.io/badge/tests-46%20passing-brightgreen)]()
+[![Tests](https://img.shields.io/badge/tests-31%20passing-brightgreen)]()
 [![Coverage](https://img.shields.io/badge/coverage-60%25-yellowgreen)]()
 [![OpenAPI](https://img.shields.io/badge/OpenAPI-3.1.0-blue)](docs/openapi.yaml)
 
@@ -14,31 +14,59 @@
 ## Highlights
 
 - **C4.5 Decision Tree** — risk scoring algorithm implemented from scratch
-- **Async Processing** — Redis Streams for decoupled task execution
+- **Async Processing** — Redis Streams for decoupled task execution (with dead-letter handling)
 - **Full Observability** — OpenTelemetry traces + Prometheus metrics + Jaeger tracing
 - **RBAC** — JWT-based role access control (admin, reviewer, applicant)
 - **gRPC** — Internal service-to-service communication
 - **Immutable Audit Trail** — append-only audit log for compliance
-- **Clean Architecture** — handler → service → repository pattern
+- **Clean Architecture** — domain-based with entity, dto, service, repository layers
+- **Transaction Boundaries** — context-aware Querier/Transactor for multi-step operations
+- **Idempotency** — `Idempotency-Key` middleware via Redis-backed store (24h TTL)
+- **Retry Strategy** — exponential backoff for transient failures (Redis stream publish)
+- **Typed Status** — `ProposalStatus` and `ReviewStatus` typed constants with business methods
 
 ## Architecture
 
 ```
 Client (SPA)
     |
-API Gateway (port 8081 — rate limiter, JWT passthrough, security headers)
+API Gateway (port 8081 — rate limiter, JWT passthrough, security headers, idempotency)
     |
 Backend Service (port 8080 HTTP + 9090 gRPC)
     |
     --- PostgreSQL 16  (source of truth)
-    --- Redis 7       (cache + async queue via Streams)
+    --- Redis 7       (cache + async queue via Streams + idempotency store)
     --- MinIO         (S3-compatible file storage)
-    --- Worker        (async: notification delivery)
+    --- Worker        (async: notification delivery via Redis Streams)
     |
 OpenTelemetry Collector
     |
     --- Prometheus  (metrics, port 9090)
     --- Jaeger      (distributed tracing, port 16686)
+```
+
+### Domain Pattern
+
+Each domain (`internal/{domain}/`) follows:
+
+```
+entity.go     — Model with business methods (CanSubmit, CanBeReviewed, etc.)
+dto/          — HTTP request/response types per subpackage
+service.go    — Business logic with transactor for multi-step operations
+repository.go — Data access via *database.Querier (auto-tx detection)
+handler.go    — HTTP handler with error mapping
+errors.go     — Sentinel errors
+```
+
+### Transaction Example
+
+```go
+tx.WithinTransaction(ctx, func(txCtx context.Context) error {
+    repo.Create(txCtx, p)
+    repo.CreateVersion(txCtx, ...)
+    audit.Log(txCtx, ...)
+    return nil
+}) // atomic: semua sukses atau rollback semua
 ```
 
 ## Quick Start
@@ -109,7 +137,7 @@ make test-integration
 # Coverage report
 make test-coverage
 
-# Current: 46 tests across 6 domains
+# Current: 31 tests across 6 domains
 go test -short -v -count=1 ./...
 ```
 
@@ -117,9 +145,9 @@ go test -short -v -count=1 ./...
 
 | Layer | Tool | Scope |
 |---|---|---|
-| Unit (service) | Mock interfaces | Business logic — 34 tests |
-| Unit (handler) | `httptest` | HTTP handlers — 8 tests |
-| Integration | `testcontainers` | Real PostgreSQL — 3 tests |
+| Unit (service) | Mock interfaces | Business logic — 21 tests |
+| Unit (handler) | `httptest` | HTTP handlers — 9 tests |
+| Integration | `testcontainers` | Real PostgreSQL — 1 test |
 | E2E | `testcontainers` | Full grant flow — 1 test |
 
 ## Example Flow

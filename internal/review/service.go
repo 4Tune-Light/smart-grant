@@ -97,8 +97,16 @@ func (s *service) Create(ctx context.Context, proposalID string, req reviewdto.C
 		resp = toResponse(rev)
 		return nil
 	})
+	if err != nil {
+		return nil, err
+	}
 
-	return resp, err
+	s.notif.Send(ctx, prop.ApplicantID, "review_received",
+		"Proposal Reviewed",
+		fmt.Sprintf("Your proposal '%s' has been reviewed (score: %d/100)", prop.Title, req.Score),
+	)
+
+	return resp, nil
 }
 
 func (s *service) GetByProposal(ctx context.Context, proposalID string) ([]reviewdto.ReviewResponse, error) {

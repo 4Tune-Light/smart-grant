@@ -1,363 +1,853 @@
 {
-	"info": {
-		"name": "Smart Grant Review Platform",
-		"description": "AI-assisted risk scoring and grant review platform.\n\nBase URL: {{base_url}}\n\nAfter Login, token is automatically saved to {{token}} variable.",
-		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
-	},
-	"variable": [
-		{ "key": "base_url", "value": "http://localhost:8081" },
-		{ "key": "token", "value": "" },
-		{ "key": "proposal_id", "value": "" },
-		{ "key": "user_id", "value": "" }
-	],
-	"item": [
-		{
-			"name": "Auth",
-			"item": [
-				{
-					"name": "Register",
-					"request": {
-						"method": "POST",
-						"header": [{ "key": "Content-Type", "value": "application/json" }],
-						"body": {
-							"mode": "raw",
-							"raw": "{\n  \"email\": \"applicant@test.com\",\n  \"password\": \"password123\",\n  \"name\": \"Alice\",\n  \"role\": \"applicant\"\n}"
-						},
-						"url": { "raw": "{{base_url}}/api/v1/auth/register", "host": ["{{base_url}}"], "path": ["api", "v1", "auth", "register"] }
-					}
-				},
-				{
-					"name": "Login",
-					"event": [
-						{
-							"listen": "test",
-							"script": {
-								"exec": [
-									"if (pm.response.code === 200) {",
-									"    var json = pm.response.json();",
-									"    pm.collectionVariables.set(\"token\", json.data.access_token);",
-									"}"
-								],
-								"type": "text/javascript"
-							}
-						}
-					],
-					"request": {
-						"method": "POST",
-						"header": [{ "key": "Content-Type", "value": "application/json" }],
-						"body": {
-							"mode": "raw",
-							"raw": "{\n  \"email\": \"applicant@test.com\",\n  \"password\": \"password123\"\n}"
-						},
-						"url": { "raw": "{{base_url}}/api/v1/auth/login", "host": ["{{base_url}}"], "path": ["api", "v1", "auth", "login"] }
-					}
-				},
-				{
-					"name": "Register Reviewer",
-					"request": {
-						"method": "POST",
-						"header": [{ "key": "Content-Type", "value": "application/json" }],
-						"body": {
-							"mode": "raw",
-							"raw": "{\n  \"email\": \"reviewer@test.com\",\n  \"password\": \"password123\",\n  \"name\": \"Bob\",\n  \"role\": \"reviewer\"\n}"
-						},
-						"url": { "raw": "{{base_url}}/api/v1/auth/register", "host": ["{{base_url}}"], "path": ["api", "v1", "auth", "register"] }
-					}
-				},
-				{
-					"name": "Register Admin",
-					"request": {
-						"method": "POST",
-						"header": [{ "key": "Content-Type", "value": "application/json" }],
-						"body": {
-							"mode": "raw",
-							"raw": "{\n  \"email\": \"admin@test.com\",\n  \"password\": \"password123\",\n  \"name\": \"Charlie\",\n  \"role\": \"admin\"\n}"
-						},
-						"url": { "raw": "{{base_url}}/api/v1/auth/register", "host": ["{{base_url}}"], "path": ["api", "v1", "auth", "register"] }
-					}
-				},
-				{
-					"name": "Refresh Token",
-					"request": {
-						"method": "POST",
-						"header": [{ "key": "Content-Type", "value": "application/json" }],
-						"body": {
-							"mode": "raw",
-							"raw": "{\n  \"refresh_token\": \"{{token}}\"\n}"
-						},
-						"url": { "raw": "{{base_url}}/api/v1/auth/refresh", "host": ["{{base_url}}"], "path": ["api", "v1", "auth", "refresh"] }
-					}
-				}
-			]
-		},
-		{
-			"name": "Users",
-			"item": [
-				{
-					"name": "List Users",
-					"request": {
-						"method": "GET",
-						"header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
-						"url": {
-							"raw": "{{base_url}}/api/v1/users?page=1&limit=10",
-							"host": ["{{base_url}}"],
-							"path": ["api", "v1", "users"],
-							"query": [
-								{ "key": "page", "value": "1" },
-								{ "key": "limit", "value": "10" }
-							]
-						}
-					}
-				},
-				{
-					"name": "Update Role",
-					"request": {
-						"method": "PATCH",
-						"header": [
-							{ "key": "Content-Type", "value": "application/json" },
-							{ "key": "Authorization", "value": "Bearer {{token}}" }
-						],
-						"body": {
-							"mode": "raw",
-							"raw": "{\n  \"role\": \"reviewer\"\n}"
-						},
-						"url": { "raw": "{{base_url}}/api/v1/users/{{user_id}}/role", "host": ["{{base_url}}"], "path": ["api", "v1", "users", "{{user_id}}", "role"] }
-					}
-				}
-			]
-		},
-		{
-			"name": "Proposals",
-			"item": [
-				{
-					"name": "Create Proposal",
-					"event": [
-						{
-							"listen": "test",
-							"script": {
-								"exec": [
-									"if (pm.response.code === 201) {",
-									"    var json = pm.response.json();",
-									"    pm.collectionVariables.set(\"proposal_id\", json.data.id);",
-									"}"
-								],
-								"type": "text/javascript"
-							}
-						}
-					],
-					"request": {
-						"method": "POST",
-						"header": [
-							{ "key": "Content-Type", "value": "application/json" },
-							{ "key": "Authorization", "value": "Bearer {{token}}" }
-						],
-						"body": {
-							"mode": "raw",
-							"raw": "{\n  \"title\": \"Research Grant for AI\",\n  \"description\": \"Funding for artificial intelligence research project focusing on natural language processing\",\n  \"nominal_amount\": 500000000,\n  \"organization\": \"AI Research Lab\"\n}"
-						},
-						"url": { "raw": "{{base_url}}/api/v1/proposals", "host": ["{{base_url}}"], "path": ["api", "v1", "proposals"] }
-					}
-				},
-				{
-					"name": "List (Cursor)",
-					"request": {
-						"method": "GET",
-						"header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
-						"url": {
-							"raw": "{{base_url}}/api/v1/proposals?limit=10",
-							"host": ["{{base_url}}"],
-							"path": ["api", "v1", "proposals"],
-							"query": [{ "key": "limit", "value": "10" }]
-						}
-					}
-				},
-				{
-					"name": "List (Page)",
-					"request": {
-						"method": "GET",
-						"header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
-						"url": {
-							"raw": "{{base_url}}/api/v1/proposals/page?page=1&limit=10",
-							"host": ["{{base_url}}"],
-							"path": ["api", "v1", "proposals", "page"],
-							"query": [
-								{ "key": "page", "value": "1" },
-								{ "key": "limit", "value": "10" }
-							]
-						}
-					}
-				},
-				{
-					"name": "Get By ID",
-					"request": {
-						"method": "GET",
-						"header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
-						"url": { "raw": "{{base_url}}/api/v1/proposals/{{proposal_id}}", "host": ["{{base_url}}"], "path": ["api", "v1", "proposals", "{{proposal_id}}"] }
-					}
-				},
-				{
-					"name": "Update Proposal",
-					"request": {
-						"method": "PUT",
-						"header": [
-							{ "key": "Content-Type", "value": "application/json" },
-							{ "key": "Authorization", "value": "Bearer {{token}}" }
-						],
-						"body": {
-							"mode": "raw",
-							"raw": "{\n  \"title\": \"Updated: Research Grant for AI 2026\"\n}"
-						},
-						"url": { "raw": "{{base_url}}/api/v1/proposals/{{proposal_id}}", "host": ["{{base_url}}"], "path": ["api", "v1", "proposals", "{{proposal_id}}"] }
-					}
-				},
-				{
-					"name": "Submit Proposal",
-					"request": {
-						"method": "POST",
-						"header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
-						"url": { "raw": "{{base_url}}/api/v1/proposals/{{proposal_id}}/submit", "host": ["{{base_url}}"], "path": ["api", "v1", "proposals", "{{proposal_id}}", "submit"] }
-					}
-				},
-				{
-					"name": "Upload Document",
-					"request": {
-						"method": "POST",
-						"header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
-						"body": {
-							"mode": "formdata",
-							"formdata": [
-								{ "key": "file", "type": "file", "src": "", "description": "Select a PDF file" }
-							]
-						},
-						"url": { "raw": "{{base_url}}/api/v1/proposals/{{proposal_id}}/documents", "host": ["{{base_url}}"], "path": ["api", "v1", "proposals", "{{proposal_id}}", "documents"] }
-					}
-				},
-				{
-					"name": "Get Documents",
-					"request": {
-						"method": "GET",
-						"header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
-						"url": { "raw": "{{base_url}}/api/v1/proposals/{{proposal_id}}/documents", "host": ["{{base_url}}"], "path": ["api", "v1", "proposals", "{{proposal_id}}", "documents"] }
-					}
-				}
-			]
-		},
-		{
-			"name": "Reviews",
-			"item": [
-				{
-					"name": "Create Review",
-					"request": {
-						"method": "POST",
-						"header": [
-							{ "key": "Content-Type", "value": "application/json" },
-							{ "key": "Authorization", "value": "Bearer {{token}}" }
-						],
-						"body": {
-							"mode": "raw",
-							"raw": "{\n  \"score\": 85,\n  \"comment\": \"Well-structured proposal with clear objectives and realistic budget\"\n}"
-						},
-						"url": { "raw": "{{base_url}}/api/v1/reviews/{{proposal_id}}", "host": ["{{base_url}}"], "path": ["api", "v1", "reviews", "{{proposal_id}}"] }
-					}
-				},
-				{
-					"name": "Get Reviews",
-					"request": {
-						"method": "GET",
-						"header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
-						"url": { "raw": "{{base_url}}/api/v1/reviews/{{proposal_id}}", "host": ["{{base_url}}"], "path": ["api", "v1", "reviews", "{{proposal_id}}"] }
-					}
-				},
-				{
-					"name": "Approve Proposal",
-					"request": {
-						"method": "POST",
-						"header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
-						"url": { "raw": "{{base_url}}/api/v1/reviews/{{proposal_id}}/approve", "host": ["{{base_url}}"], "path": ["api", "v1", "reviews", "{{proposal_id}}", "approve"] }
-					}
-				},
-				{
-					"name": "Reject Proposal",
-					"request": {
-						"method": "POST",
-						"header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
-						"url": { "raw": "{{base_url}}/api/v1/reviews/{{proposal_id}}/reject", "host": ["{{base_url}}"], "path": ["api", "v1", "reviews", "{{proposal_id}}", "reject"] }
-					}
-				}
-			]
-		},
-		{
-			"name": "Risk Scoring",
-			"item": [
-				{
-					"name": "Calculate Score",
-					"request": {
-						"method": "POST",
-						"header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
-						"url": { "raw": "{{base_url}}/api/v1/risk/{{proposal_id}}", "host": ["{{base_url}}"], "path": ["api", "v1", "risk", "{{proposal_id}}"] }
-					}
-				},
-				{
-					"name": "Get Score",
-					"request": {
-						"method": "GET",
-						"header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
-						"url": { "raw": "{{base_url}}/api/v1/risk/{{proposal_id}}", "host": ["{{base_url}}"], "path": ["api", "v1", "risk", "{{proposal_id}}"] }
-					}
-				}
-			]
-		},
-		{
-			"name": "Audit",
-			"item": [
-				{
-					"name": "List Audit Logs",
-					"request": {
-						"method": "GET",
-						"header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
-						"url": {
-							"raw": "{{base_url}}/api/v1/audit-logs?entity_type=proposal&limit=20",
-							"host": ["{{base_url}}"],
-							"path": ["api", "v1", "audit-logs"],
-							"query": [
-								{ "key": "entity_type", "value": "proposal" },
-								{ "key": "limit", "value": "20" }
-							]
-						}
-					}
-				}
-			]
-		},
-		{
-			"name": "Notifications",
-			"item": [
-				{
-					"name": "List Notifications",
-					"request": {
-						"method": "GET",
-						"header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
-						"url": {
-							"raw": "{{base_url}}/api/v1/notifications?limit=20",
-							"host": ["{{base_url}}"],
-							"path": ["api", "v1", "notifications"],
-							"query": [{ "key": "limit", "value": "20" }]
-						}
-					}
-				},
-				{
-					"name": "Mark Read",
-					"request": {
-						"method": "PATCH",
-						"header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
-						"url": {
-							"raw": "{{base_url}}/api/v1/notifications/read?id=NOTIFICATION_ID",
-							"host": ["{{base_url}}"],
-							"path": ["api", "v1", "notifications", "read"],
-							"query": [{ "key": "id", "value": "NOTIFICATION_ID" }]
-						}
-					}
-				}
-			]
-		}
-	]
+  "info": {
+    "name": "Smart Grant Review Platform",
+    "description": "AI-assisted risk scoring and grant review platform.\n\nBase URL: {{base_url}}\n\nAfter Login, token is automatically saved to {{token}} variable.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:8081"
+    },
+    {
+      "key": "token",
+      "value": ""
+    },
+    {
+      "key": "proposal_id",
+      "value": ""
+    },
+    {
+      "key": "user_id",
+      "value": ""
+    }
+  ],
+  "item": [
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "Register",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{idempotency_key}}",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"applicant@test.com\",\n  \"password\": \"password123\",\n  \"name\": \"Alice\",\n  \"role\": \"applicant\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/auth/register",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "auth",
+                "register"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Login",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    var json = pm.response.json();",
+                  "    pm.collectionVariables.set(\"token\", json.data.access_token);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{idempotency_key}}",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"applicant@test.com\",\n  \"password\": \"password123\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/auth/login",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "auth",
+                "login"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Register Reviewer",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{idempotency_key}}",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"reviewer@test.com\",\n  \"password\": \"password123\",\n  \"name\": \"Bob\",\n  \"role\": \"reviewer\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/auth/register",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "auth",
+                "register"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Register Admin",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{idempotency_key}}",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"admin@test.com\",\n  \"password\": \"password123\",\n  \"name\": \"Charlie\",\n  \"role\": \"admin\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/auth/register",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "auth",
+                "register"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Refresh Token",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{idempotency_key}}",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refresh_token\": \"{{token}}\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/auth/refresh",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "auth",
+                "refresh"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Users",
+      "item": [
+        {
+          "name": "List Users",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/users?page=1&limit=10",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "users"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "10"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Update Role",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{idempotency_key}}",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"role\": \"reviewer\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/users/{{user_id}}/role",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "users",
+                "{{user_id}}",
+                "role"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Proposals",
+      "item": [
+        {
+          "name": "Create Proposal",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "    var json = pm.response.json();",
+                  "    pm.collectionVariables.set(\"proposal_id\", json.data.id);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{idempotency_key}}",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Research Grant for AI\",\n  \"description\": \"Funding for artificial intelligence research project focusing on natural language processing\",\n  \"nominal_amount\": 500000000,\n  \"organization\": \"AI Research Lab\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/proposals",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "proposals"
+              ]
+            }
+          }
+        },
+        {
+          "name": "List (Cursor)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/proposals?limit=10",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "proposals"
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "10"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "List (Page)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/proposals/page?page=1&limit=10",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "proposals",
+                "page"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "10"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get By ID",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/proposals/{{proposal_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "proposals",
+                "{{proposal_id}}"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Update Proposal",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{idempotency_key}}",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Updated: Research Grant for AI 2026\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/proposals/{{proposal_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "proposals",
+                "{{proposal_id}}"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Submit Proposal",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{idempotency_key}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/proposals/{{proposal_id}}/submit",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "proposals",
+                "{{proposal_id}}",
+                "submit"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Upload Document",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{idempotency_key}}",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": "",
+                  "description": "Select a PDF file"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/proposals/{{proposal_id}}/documents",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "proposals",
+                "{{proposal_id}}",
+                "documents"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get Documents",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/proposals/{{proposal_id}}/documents",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "proposals",
+                "{{proposal_id}}",
+                "documents"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Reviews",
+      "item": [
+        {
+          "name": "Create Review",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{idempotency_key}}",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"score\": 85,\n  \"comment\": \"Well-structured proposal with clear objectives and realistic budget\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/reviews/{{proposal_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "reviews",
+                "{{proposal_id}}"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get Reviews",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/reviews/{{proposal_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "reviews",
+                "{{proposal_id}}"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Approve Proposal",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{idempotency_key}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/reviews/{{proposal_id}}/approve",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "reviews",
+                "{{proposal_id}}",
+                "approve"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Reject Proposal",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{idempotency_key}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/reviews/{{proposal_id}}/reject",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "reviews",
+                "{{proposal_id}}",
+                "reject"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Risk Scoring",
+      "item": [
+        {
+          "name": "Calculate Score",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{idempotency_key}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/risk/{{proposal_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "risk",
+                "{{proposal_id}}"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get Score",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/risk/{{proposal_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "risk",
+                "{{proposal_id}}"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Audit",
+      "item": [
+        {
+          "name": "List Audit Logs",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/audit-logs?entity_type=proposal&limit=20",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "audit-logs"
+              ],
+              "query": [
+                {
+                  "key": "entity_type",
+                  "value": "proposal"
+                },
+                {
+                  "key": "limit",
+                  "value": "20"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Notifications",
+      "item": [
+        {
+          "name": "List Notifications",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/notifications?limit=20",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "notifications"
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "20"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Mark Read",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{idempotency_key}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/notifications/read?id=NOTIFICATION_ID",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "notifications",
+                "read"
+              ],
+              "query": [
+                {
+                  "key": "id",
+                  "value": "NOTIFICATION_ID"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    }
+  ]
 }
