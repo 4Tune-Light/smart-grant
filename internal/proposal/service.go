@@ -249,6 +249,10 @@ func (s *service) ListPage(ctx context.Context, status string, limit int, page i
 func (s *service) UploadDocument(ctx context.Context, proposalID string, file io.Reader, header *multipart.FileHeader) (*proposaldto.DocumentResponse, error) {
 	userID, _ := ctx.Value(middleware.AuthUserIDKey).(string)
 
+	if s.storage == nil {
+		return nil, fmt.Errorf("file storage not available")
+	}
+
 	proposal, err := s.repo.FindByID(ctx, proposalID)
 	if err != nil {
 		return nil, err

@@ -12,6 +12,7 @@ import (
 
 	"github.com/golang-jwt/jwt/v5"
 	authdto "github.com/rizky/smart-grant/internal/auth/dto"
+	"github.com/rizky/smart-grant/internal/middleware"
 	"golang.org/x/crypto/argon2"
 )
 
@@ -178,7 +179,7 @@ func (s *service) ListUsers(ctx context.Context, role string, limit int, page in
 }
 
 func (s *service) UpdateRole(ctx context.Context, targetID string, newRole string) error {
-	actorID, _ := ctx.Value("auth_user_id").(string)
+	actorID, _ := ctx.Value(middleware.AuthUserIDKey).(string)
 	if actorID == targetID {
 		return fmt.Errorf("cannot change your own role")
 	}
